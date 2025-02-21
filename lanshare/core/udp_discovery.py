@@ -1,3 +1,5 @@
+"""This module implements the peer discovery service."""
+
 import socket
 import json
 import threading
@@ -11,7 +13,32 @@ from .types import Peer, Message
 from ..config.settings import Config
 
 class UDPPeerDiscovery(PeerDiscovery):
+    """Manages peer discovery and communication using UDP.
+
+    Multithreaded implementations for discovering peers and handling
+    communication between them using UDP protocol with a fixed port. Peer 
+    discovery is done by broadcasting its presence and listens for other peers' 
+    broadcasts and direct messages. Broadcast packets are labeled with type 
+    'announcement'. Message communication packets are labeled with type 'message'.
+    """
+       
     def __init__(self, username: str, config: Config):
+        """Initialize the UDPDiscovery instance.
+
+        Args:
+            username: The username of the user.
+            config: The configuration containing settings.
+
+        Attributes:
+            username: The username of the user.
+            config: The configuration object containing settings.
+            peers: A dictionary to store peer information. Example: {username: 'Peer'}
+            messages: A list to store messages.
+            in_live_view: A flag indicating if the user is in live view mode.
+            running: A flag indicating if the service is running.
+            udp_socket: The UDP socket used for both broadcast and direct messages.
+        """
+
         self.username = username
         self.config = config
         self.peers: Dict[str, Peer] = {}
@@ -26,17 +53,17 @@ class UDPPeerDiscovery(PeerDiscovery):
         # Allow broadcasting from any interface
         self.udp_socket.bind(('', self.config.port))  # Use empty string instead of '0.0.0.0'
 
-    def start(self):
-        """Start all services"""
+    def start(self) -> None:
+        """Start all services."""
         self._start_threads()
 
-    def stop(self):
-        """Stop all services"""
+    def stop(self) -> None:
+        """Stop all services."""
         self.running = False
         self.udp_socket.close()
 
-    def _start_threads(self):
-        """Start the broadcast and listener threads"""
+    def _start_threads(self) -> None:
+        """Start the broadcast and listener threads."""
         self.broadcast_thread = threading.Thread(target=self._broadcast_presence)
         self.broadcast_thread.daemon = True
         self.broadcast_thread.start()
@@ -45,24 +72,28 @@ class UDPPeerDiscovery(PeerDiscovery):
         self.listen_thread.daemon = True
         self.listen_thread.start()
 
-    def debug_print(self, message: str):
-        """Print debug message if enabled"""
+    def debug_print(self, message: str) -> None:
+        """Print debug message if enabled.
+        
+        Args: 
+            message: information to be printed in the terminal.
+        """
         self.config.load_config()
         if self.config.debug and not self.in_live_view:
             self.config.add_debug_message(message)
 
-    def _broadcast_presence(self):
-        """Broadcast presence periodically"""
+    def _broadcast_presence(self) -> None:
+        """Sends broadcast announcement to peers in the network periodically."""
         while self.running:
             try:
-                message = {
+                packet = {
                     'type': 'announcement',
                     'username': self.username,
                     'timestamp': datetime.now().isoformat()
                 }
                 # Use '<broadcast>' instead of '255.255.255.255'
                 self.udp_socket.sendto(
-                    json.dumps(message).encode(),
+                    json.dumps(packet).encode(),
                     ('<broadcast>', self.config.port)
                 )
                 self.debug_print(f"Broadcasting presence: {self.username}")
@@ -72,16 +103,17 @@ class UDPPeerDiscovery(PeerDiscovery):
                 self.debug_print(f"Error details: {str(e)}")
             time.sleep(self.config.broadcast_interval)
 
-    def _listen_for_packets(self):
-        """Listen for both broadcasts and direct messages"""
+    def _listen_for_packets(self) -> None:
+        """Listen for both broadcasts and direct messages."""
         self.debug_print(f"Started listening for packets on port {self.config.port}")
         while self.running:
             try:
-                data, addr = self.udp_socket.recvfrom(4096)
+                raw_packet, addr = self.udp_socket.recvfrom(4096)
                 self.debug_print(f"Received raw data from {addr}")
-                packet = json.loads(data.decode())
+                packet = json.loads(raw_packet.decode())
                 self.debug_print(f"Decoded packet type: {packet['type']}")
-                
+
+                # Check whether the packet is a broadcast announcement or a message
                 if packet['type'] == 'announcement':
                     self._handle_announcement(packet, addr)
                 elif packet['type'] == 'message':
@@ -92,8 +124,13 @@ class UDPPeerDiscovery(PeerDiscovery):
                     self.debug_print(f"Packet receiving error: {e}")
                     self.debug_print(f"Error details: {str(e)}")
 
-    def _handle_announcement(self, packet: Dict, addr: tuple):
-        """Handle peer announcements"""
+    def _handle_announcement(self, packet: Dict, addr: tuple) -> None:
+        """Processes broadcast announcements received from other peers in the network.
+        
+        Args:
+            packet: Dict containing the broadcast announcement
+            addr: Source network address of the packet
+        """
         if packet['username'] != self.username:
             now = datetime.now()
             self.peers[packet['username']] = Peer(
@@ -101,12 +138,16 @@ class UDPPeerDiscovery(PeerDiscovery):
                 address=addr[0],
                 last_seen=now,
                 first_seen=now if packet['username'] not in self.peers else 
-                          self.peers[packet['username']].first_seen
+                          self.peers[packet['username']].first_seen # use current time for newly connected peer, keep the old value for already connected peer
             )
             self.debug_print(f"Updated peer: {packet['username']} at {addr[0]}")
 
     def _handle_message(self, packet: Dict):
-        """Handle incoming messages"""
+        """Processes incoming messages received from other peers.
+        
+        Args:
+            packet: Dict containing the message information
+        """
         try:
             msg = Message.from_dict(packet['data'])
             if msg.recipient == self.username:
@@ -117,7 +158,15 @@ class UDPPeerDiscovery(PeerDiscovery):
             self.debug_print(f"Message handling error: {e}")
 
     def _generate_conversation_id(self, user1: str, user2: str) -> str:
-        """Generate a consistent conversation ID for two users"""
+        """Generate a consistent conversation ID for two users in a conversation.
+        
+        Args:
+            user1: The username of one user
+            user2: The username of the other user
+        
+        Returns:
+            A conversation ID for user1 and user2 to look up the conversation later. 
+        """
         # Sort usernames to ensure same ID regardless of sender/recipient
         sorted_users = sorted([user1, user2])
         # Create a consistent hash using the sorted usernames
@@ -129,7 +178,18 @@ class UDPPeerDiscovery(PeerDiscovery):
     def send_message(self, recipient: str, title: str, content: str, 
                     conversation_id: Optional[str] = None,
                     reply_to: Optional[str] = None) -> Optional[Message]:
-        """Send a message directly to a peer via UDP"""
+        """Send a message directly to a peer via UDP.
+        
+        Args:
+            recipient: The username of the recipient.
+            title: The title of the message.
+            content: The content of the message.
+            conversation_id: Optional conversation ID for the message.
+            reply_to: Optional message ID to indicate this message is a reply.
+        
+        Returns:
+            A Message instance.
+        """
         peer = self.peers.get(recipient)
         if not peer:
             return None
@@ -168,9 +228,15 @@ class UDPPeerDiscovery(PeerDiscovery):
             return None
 
     def list_peers(self) -> Dict[str, Peer]:
-        """Return list of active peers"""
+        """Get a list of active peers.
+        
+        Returns:
+            A Dict containing peer username and the associated Peer instance. 
+        """
         current_time = datetime.now()
         active_peers = {}
+
+        # Gets peers whose last seene time were within the timeout limit
         for username, peer in self.peers.items():
             time_diff = (current_time - peer.last_seen).total_seconds()
             if time_diff <= self.config.peer_timeout:
@@ -182,17 +248,31 @@ class UDPPeerDiscovery(PeerDiscovery):
         return active_peers
 
     def list_messages(self, peer: Optional[str] = None) -> List[Message]:
-        """List all messages or messages with specific peer"""
+        """List all messages or messages with specific peer.
+
+        Args:
+            peer: Optional list of peer usernames.
+        
+        Returns:
+            A list of Message instances. 
+        """
         if peer:
             return [msg for msg in self.messages 
                    if msg.sender == peer or msg.recipient == peer]
         return self.messages
 
     def get_conversation(self, conversation_id: str) -> List[Message]:
-        """Get all messages in a conversation"""
+        """Get all messages in a conversation.
+        
+        Args:
+            conversation_id: Unique identifier of the conversation.
+        
+        Returns:
+            A list of message instances in the conversation. 
+        """
         return [msg for msg in self.messages 
                 if msg.conversation_id == conversation_id]
 
-    def cleanup(self):
-        """Clean up resources"""
+    def cleanup(self) -> None:
+        """Clean up resources."""
         self.stop()

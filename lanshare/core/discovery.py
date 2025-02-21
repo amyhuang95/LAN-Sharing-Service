@@ -1,3 +1,5 @@
+"""This module defines the interface for peer discovery implementations."""
+
 from abc import ABC, abstractmethod
 from typing import Dict
 from .types import Peer
@@ -12,12 +14,20 @@ class PeerDiscovery(ABC):
 
     @abstractmethod
     def debug_print(self, message: str) -> None:
-        """Print debug messages"""
+        """Print debug messages
+        
+        Args:
+            message: information to be printed in the terminal.
+        """
         pass
 
     @abstractmethod
     def list_peers(self) -> Dict[str, Peer]:
-        """List all currently active peers"""
+        """List all currently active peers
+        
+        Returns:
+            A dict mapping username to the corresponding Peer object.
+        """
         pass
 
     @abstractmethod
