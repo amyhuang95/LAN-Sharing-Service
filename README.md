@@ -56,6 +56,7 @@ evan-dayy#81b6@LAN(192.168.4.141)#
 
 ### Demo
 ---
+[![Watch the video](https://img.youtube.com/vi/YOUTUBE_VIDEO_ID/0.jpg)](https://www.youtube.com/watch?v=F58Uq8qykfY)
 #### User List `ul`
 By running `ul`, you will see a list of active user.
 
