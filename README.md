@@ -16,8 +16,8 @@ A local-area-network (LAN) sharing service that shares files and clipboards acro
 First, make a new folder and clone the repo:
 ```sh
 mkdir lanss && cd lanss
-git clone git@github.com:amyhuang95/P2P-Data-Sharing-App.git
-cd P2P-Data-Sharing-App
+git clone git@github.com:amyhuang95/LAN-Sharing-Service.git
+cd LAN-Sharing-Service
 ```
 
 download all python dependencies:
@@ -29,8 +29,9 @@ pip install -r requirements.txt
 
 ### Create a User with `username`
 ---
+Create a user with `username = evan-dayy`.
 ```sh
-python create.py create --username evan-dayy
+python create.py create --username <USERNAME>
 ```
 
 Access to the LAN Terminal command;
