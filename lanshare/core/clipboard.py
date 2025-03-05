@@ -10,7 +10,8 @@ import threading
 
 class Clipboard:
 
-    def __init__(self, discovery: UDPPeerDiscovery, config: Config):
+    def __init__(self, discovery: UDPPeerDiscovery, config: Config, share_local_clip=False, accept_remote_clip=False):
+        """Default not share local clips to peers or accepts clips from peers for better security. Assume either will be True for this service to be instantiated."""
         self.discovery = discovery # to get a list of active peers
         self.config = config # debug print & service port
         self.curr_clip_content = None # TODO: need to ensure this variable thread safe
@@ -18,6 +19,8 @@ class Clipboard:
         self.local_clips: List[Clip] = []
         self.max_clips = 20
         self.activate = True
+        self.share_local_clip = share_local_clip
+        self.accept_remote_clip = accept_remote_clip
 
         # TODO: look into other kind of implementation like TCP
         # Set up UDP connection for sending and accepting copied contents from other peers
@@ -37,13 +40,15 @@ class Clipboard:
     
     def _start_threads(self) -> None:
         """Start the broadcast and listener threads."""
-        self.broadcast_thread = threading.Thread(target=self._listen_for_local_clip)
-        self.broadcast_thread.daemon = True
-        self.broadcast_thread.start()
+        if self.share_local_clip:
+            self.broadcast_thread = threading.Thread(target=self._listen_for_local_clip)
+            self.broadcast_thread.daemon = True
+            self.broadcast_thread.start()
 
-        self.listen_thread = threading.Thread(target=self._listen_for_remote_clip)
-        self.listen_thread.daemon = True
-        self.listen_thread.start()
+        if self.accept_remote_clip:
+            self.listen_thread = threading.Thread(target=self._listen_for_remote_clip)
+            self.listen_thread.daemon = True
+            self.listen_thread.start()
 
     def debug_print(self, message: str) -> None:
         """Print debug message if enabled.
@@ -57,8 +62,7 @@ class Clipboard:
 
     def _listen_for_local_clip(self) -> None:
         """Listen for new locally-copied content."""
-        # TODO: check if possible to detect keys pressed in the background instead of comparing content
-        while self.activate:
+        while self.share_local_clip:
             try:
                 content = pyperclip.paste()
                 if content != self.curr_clip_content:
@@ -76,7 +80,7 @@ class Clipboard:
 
     def _listen_for_remote_clip(self) -> None:
         """Listen for copied content from other peers"""
-        while self.activate:
+        while self.accept_remote_clip:
             try:
                 raw_packet, addr = self.udp_socket.recvfrom(4096)
                 self.debug_print(f"Received raw data from {addr}")
