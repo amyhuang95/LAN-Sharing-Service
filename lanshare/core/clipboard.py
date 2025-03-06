@@ -27,7 +27,6 @@ class Clipboard:
 
         # Set up UDP connection for sending and accepting copied contents from other peers
         self.udp_socket = discovery.udp_socket
-        self.udp_socket.bind(('', self.config.port)) # Accept connections from any address
 
     def start(self) -> None:
         """Start all services."""
