@@ -14,6 +14,7 @@ class Clipboard:
         """Default not share local clips to peers or accepts clips from peers for better security. Assume either will be True for this service to be instantiated."""
         self.discovery = discovery # to get a list of active peers
         self.config = config # debug print & service port
+        self.service_port = self.config.port + 1
         self.curr_clip_content = None # TODO: need to ensure this variable thread safe
         self.remote_clips: List[Clip] = []
         self.local_clips: List[Clip] = []
@@ -26,7 +27,7 @@ class Clipboard:
         self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         # Use broadcasting from any interface # TODO: Check which interface to use
-        self.udp_socket.bind(('', self.config.port))  # Use empty string instead of '0.0.0.0'
+        self.udp_socket.bind(('', self.service_port))
 
     def start(self) -> None:
         """Start all services."""
