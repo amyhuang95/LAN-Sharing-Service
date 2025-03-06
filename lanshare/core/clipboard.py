@@ -1,5 +1,5 @@
 import time
-from typing import List, Dict, Optional, Set
+from typing import List, Dict
 from .types import Peer, Clip
 from .udp_discovery import UDPPeerDiscovery
 import socket
@@ -11,11 +11,10 @@ import threading
 
 class Clipboard:
 
-    def __init__(self, discovery: UDPPeerDiscovery, config: Config, share_local_clip=False, accept_remote_clip=False):
+    def __init__(self, discovery: UDPPeerDiscovery, config: Config, share_local_clip, accept_remote_clip):
         """Default not share local clips to peers or accepts clips from peers for better security. Assume either will be True for this service to be instantiated."""
         self.discovery = discovery # to get a list of active peers
         self.config = config # debug print & service port
-        
         self.curr_clip_content = None
         self.clip_lock = threading.Lock()  # Lock for thread safety
         self.remote_clips: List[Clip] = []
@@ -23,13 +22,12 @@ class Clipboard:
         self.max_clips = 20
         self.share_local_clip = share_local_clip
         self.accept_remote_clip = accept_remote_clip
-        self.running = True        
+        self.running = True
+        self.in_live_view = False
 
         # Set up UDP connection for sending and accepting copied contents from other peers
-        self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.service_port = self.config.port + 1
-        self.udp_socket.bind(('', self.service_port)) # Accept connections from any address
+        self.udp_socket = discovery.udp_socket
+        self.udp_socket.bind(('', self.config.port)) # Accept connections from any address
 
     def start(self) -> None:
         """Start all services."""
@@ -61,7 +59,7 @@ class Clipboard:
             message: information to be printed in the terminal.
         """
         self.config.load_config()
-        if self.config.debug:
+        if self.config.debug and not self.in_live_view:
             self.config.add_debug_message(f"[📋Clipboard] {message}")
 
     def _listen_for_local_clip(self) -> None:
@@ -121,6 +119,9 @@ class Clipboard:
         try:
             # Get active peers
             peers: Dict[str, Peer] = self.discovery.list_peers()
+            if not peers:
+                self.debug_print("No active peers found to send clipboard content")
+                return
             packet = {
                 'type': 'clip',
                 'data': clip.to_dict()
@@ -128,7 +129,7 @@ class Clipboard:
             # Send packet to each active peer
             for username, peer in peers.items():
                 self.debug_print(f"Sending clip id {clip.id} to peer - {username} at {peer.address}")
-                self.udp_socket.sendto(json.dumps(packet).encode(), (peer.address, self.service_port))
+                self.udp_socket.sendto(json.dumps(packet).encode(), (peer.address, self.config.port))
 
         except Exception as e:
             self.debug_print(f"Error sending clip id {clip.id}: {e}")
