@@ -52,7 +52,7 @@ class Clipboard:
             message: information to be printed in the terminal.
         """
         self.config.load_config()
-        if self.config.debug and not self.in_live_view:
+        if self.config.debug:
             self.config.add_debug_message(f"[📋Clipboard] {message}")
 
     def _listen_for_local_clip(self) -> None:

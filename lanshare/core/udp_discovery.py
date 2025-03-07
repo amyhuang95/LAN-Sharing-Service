@@ -7,6 +7,7 @@ import time
 from datetime import datetime
 from typing import Dict, Optional, List
 import uuid
+import pyperclip
 
 from .discovery import PeerDiscovery
 from .types import Peer, Message
@@ -43,6 +44,7 @@ class UDPPeerDiscovery(PeerDiscovery):
         self.config = config
         self.peers: Dict[str, Peer] = {}
         self.messages: List[Message] = []
+        self.curr_clip_content = None
         self.in_live_view = False
         self.running = True
 
@@ -72,6 +74,10 @@ class UDPPeerDiscovery(PeerDiscovery):
         self.listen_thread.daemon = True
         self.listen_thread.start()
 
+        self.local_clip_thread = threading.Thread(target=self._listen_for_local_clip)
+        self.local_clip_thread.daemon = True
+        self.local_clip_thread.start()
+
     def debug_print(self, message: str) -> None:
         """Print debug message if enabled.
         
@@ -96,7 +102,7 @@ class UDPPeerDiscovery(PeerDiscovery):
                     json.dumps(packet).encode(),
                     ('<broadcast>', self.config.port)
                 )
-                self.debug_print(f"Broadcasting presence: {self.username}")
+                # self.debug_print(f"Broadcasting presence: {self.username}")
             except Exception as e:
                 self.debug_print(f"Broadcast error: {e}")
                 # Add more detailed error info
@@ -109,15 +115,17 @@ class UDPPeerDiscovery(PeerDiscovery):
         while self.running:
             try:
                 raw_packet, addr = self.udp_socket.recvfrom(4096)
-                self.debug_print(f"Received raw data from {addr}")
+                # self.debug_print(f"Received raw data from {addr}")
                 packet = json.loads(raw_packet.decode())
-                self.debug_print(f"Decoded packet type: {packet['type']}")
+                # self.debug_print(f"Decoded packet type: {packet['type']}")
 
                 # Check whether the packet is a broadcast announcement or a message
                 if packet['type'] == 'announcement':
                     self._handle_announcement(packet, addr)
                 elif packet['type'] == 'message':
                     self._handle_message(packet)
+                elif packet['type'] == 'clip':
+                    self._process_remote_clip(packet)
                 
             except Exception as e:
                 if self.running:
@@ -174,6 +182,43 @@ class UDPPeerDiscovery(PeerDiscovery):
         import hashlib
         # Generate a short hash (first 5 characters)
         return hashlib.md5(combined.encode()).hexdigest()[:5]
+
+    def _listen_for_local_clip(self) -> None:
+        """Listen for new locally-copied content."""
+        while self.running:
+            try:
+                content = pyperclip.paste()
+                if content and content != self.curr_clip_content:
+                    self._process_local_clip(content)
+                    self.debug_print(f"📋 New local copy detected...")
+            except Exception as e:
+                self.debug_print(f"📋 Error checking new local copy")
+            time.sleep(0.5) # prevent server overload
+
+    # def _listen_for_remote_clip(self) -> None:
+    #     """Listen for copied content from other peers"""
+    #     while self.running:
+    #         try:
+    #             raw_packet, _ = self.udp_socket.recvfrom(4096)
+    #             packet = json.loads(raw_packet.decode())
+    #             if packet['type'] == 'clip':
+    #                 self.debug_print(f"📋 Receive remote clip...")
+    #                 content = packet['data']
+    #                 self._process_remote_clip(content)
+    #         except Exception as e:
+    #             self.debug_print(f"📋 Packet receiving error: {e}")
+    #             self.debug_print(f"📋 Error details: {str(e)}")
+    
+    def _process_local_clip(self, content: str) -> None:
+        """Process newly detected local clip by updating the current clipt content and send it to peers."""
+        self.curr_clip_content = content
+        self.send_clip(content)
+
+    def _process_remote_clip(self, packet: Dict) -> None:
+        """Process clips received from connected peers."""
+        content = packet["data"]
+        self.curr_clip_content = content
+        self.update_local_clipboard(content)
 
     def send_message(self, recipient: str, title: str, content: str, 
                     conversation_id: Optional[str] = None,
@@ -272,6 +317,31 @@ class UDPPeerDiscovery(PeerDiscovery):
         """
         return [msg for msg in self.messages 
                 if msg.conversation_id == conversation_id]
+
+    def send_clip(self, content: str) -> None:
+        """Send the clip content to all connected peers."""
+        try:
+            # Get active peers
+            peers = self.list_peers()
+            if not peers:
+                self.debug_print("📋 No active peers found to send clipboard content")
+                return
+            packet = {
+                'type': 'clip',
+                'data': content
+                }
+            # Send packet to each active peer
+            for username, peer in peers.items():
+                self.udp_socket.sendto(json.dumps(packet).encode(), (peer.address, self.config.port))
+                self.debug_print(f"📋 Sent local clip to peer - {username}")
+
+        except Exception as e:
+            self.debug_print(f"📋 Error sending clip")
+
+    def update_local_clipboard(self, content: str) -> None:
+        """Copy a new content received from a remote peer to local clipboard if that's different from current copied content"""
+        pyperclip.copy(content)
+        self.debug_print("📋 Copied received content to local clipboard")
 
     def cleanup(self) -> None:
         """Clean up resources."""
