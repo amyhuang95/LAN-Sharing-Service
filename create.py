@@ -49,9 +49,10 @@ def main():
         discovery = UDPPeerDiscovery(username_with_id, config)
         discovery.start()
 
-        # Start clipboard sharing service
-        clipboard = Clipboard(discovery, config, args.share_clip, args.receive_clip)
-        clipboard.start()
+        # Start clipboard sharing service if user asks for either sending local copies to peers or receiving copies from peers
+        if args.share_clip or args.receive_clip:
+            clipboard = Clipboard(discovery, config, args.share_clip, args.receive_clip)
+            clipboard.start()
         
         # Start terminal UI
         session = InteractiveSession(discovery)
