@@ -1,8 +1,7 @@
 import time
-from typing import List, Dict
-from .types import Peer, Clip
+from typing import List
+from .types import Clip
 from .udp_discovery import UDPPeerDiscovery
-import socket
 import json
 import uuid
 from ..config.settings import Config
