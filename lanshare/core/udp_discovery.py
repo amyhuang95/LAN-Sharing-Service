@@ -102,7 +102,7 @@ class UDPPeerDiscovery(PeerDiscovery):
                     json.dumps(packet).encode(),
                     ('<broadcast>', self.config.port)
                 )
-                # self.debug_print(f"Broadcasting presence: {self.username}")
+                self.debug_print(f"Broadcasting presence: {self.username}")
             except Exception as e:
                 self.debug_print(f"Broadcast error: {e}")
                 # Add more detailed error info
@@ -115,9 +115,9 @@ class UDPPeerDiscovery(PeerDiscovery):
         while self.running:
             try:
                 raw_packet, addr = self.udp_socket.recvfrom(4096)
-                # self.debug_print(f"Received raw data from {addr}")
+                self.debug_print(f"Received raw data from {addr}")
                 packet = json.loads(raw_packet.decode())
-                # self.debug_print(f"Decoded packet type: {packet['type']}")
+                self.debug_print(f"Decoded packet type: {packet['type']}")
 
                 # Check whether the packet is a broadcast announcement or a message
                 if packet['type'] == 'announcement':
