@@ -1,3 +1,4 @@
+import socket
 import time
 from typing import List
 from .types import Clip
@@ -18,9 +19,14 @@ class Clipboard:
 
         # Config Set up
         self.discovery = discovery # to get a list of active peers
-        self.udp_socket = discovery.udp_socket
         self.config = config # debug print & service port
         self.in_live_view = False
+
+        # Set up UDP socket
+        self.service_port = self.config.port + 1
+        self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.udp_socket.bind(('', self.service_port))
         
         # Track recent clips
         self.remote_clips: List[Clip] = []
@@ -124,7 +130,7 @@ class Clipboard:
             # Send packet to each active peer
             for username, peer in peers.items():
                 self.debug_print(f"Sending clip id {clip.id} to peer - {username} at {peer.address}")
-                self.udp_socket.sendto(json.dumps(packet).encode(), (peer.address, self.config.port))
+                self.udp_socket.sendto(json.dumps(packet).encode(), (peer.address, self.service_port))
 
         except Exception as e:
             self.debug_print(f"Error sending clip id {clip.id}: {e}")
