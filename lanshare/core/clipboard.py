@@ -15,8 +15,7 @@ class Clipboard:
         """Default not share local clips to peers or accepts clips from peers for better security. Assume either will be True for this service to be instantiated."""
         self.discovery = discovery # to get a list of active peers
         self.config = config # debug print & service port
-        self.curr_clip_content = None
-        self.clip_lock = threading.Lock()  # Lock for thread safety
+        self.curr_clip_content = None # TODO: ensure thread safety
         self.remote_clips: List[Clip] = []
         self.local_clips: List[Clip] = []
         self.max_clips = 20
@@ -42,14 +41,14 @@ class Clipboard:
     def _start_threads(self) -> None:
         """Start the broadcast and listener threads."""
         if self.share_local_clip:
-            self.broadcast_thread = threading.Thread(target=self._listen_for_local_clip)
-            self.broadcast_thread.daemon = True
-            self.broadcast_thread.start()
+            self.local_clip_thread = threading.Thread(target=self._listen_for_local_clip)
+            self.local_clip_thread.daemon = True
+            self.local_clip_thread.start()
 
         if self.accept_remote_clip:
-            self.listen_thread = threading.Thread(target=self._listen_for_remote_clip)
-            self.listen_thread.daemon = True
-            self.listen_thread.start()
+            self.remote_clip_thread = threading.Thread(target=self._listen_for_remote_clip)
+            self.remote_clip_thread.daemon = True
+            self.remote_clip_thread.start()
 
     def debug_print(self, message: str) -> None:
         """Print debug message if enabled.
@@ -57,30 +56,29 @@ class Clipboard:
         Args: 
             message: information to be printed in the terminal.
         """
+        print(f"📋 Clipboard - {message}")
         self.config.load_config()
         if self.config.debug and not self.in_live_view:
-            self.config.add_debug_message(f"[📋Clipboard] {message}")
+            self.config.add_debug_message(f"📋 Clipboard - {message}")
 
     def _listen_for_local_clip(self) -> None:
         """Listen for new locally-copied content."""
         while self.share_local_clip and self.running:
             try:
                 content = pyperclip.paste()
-                with self.clip_lock:
-                    if content and content != self.curr_clip_content:
-                        self._process_local_clip(content)
-                        self.debug_print(f"New local copy detected...")
+                if content and content != self.curr_clip_content:
+                    self._process_local_clip(content)
+                    self.debug_print(f"New local copy detected... {content}")
             except Exception as e:
                 self.debug_print(f"Error checking new local copy")
             time.sleep(0.5)
 
     def _process_local_clip(self, content: str) -> None:
         """Process newly detected local clip by updating the current clipt content and send it to peers."""
-        with self.clip_lock:
-            self.curr_clip_content = content
+        self.curr_clip_content = content
         
         clip = Clip(
-            id=str(uuid.uuid4()),  # for debugging purpose
+            id=str(uuid.uuid4())[:4],  # for debugging purpose
             content=content,
             source='local'
         )
@@ -93,10 +91,10 @@ class Clipboard:
         """Listen for copied content from other peers"""
         while self.accept_remote_clip and self.running:
             try:
-                raw_packet, addr = self.udp_socket.recvfrom(4096)
+                raw_packet, _ = self.udp_socket.recvfrom(4096)
                 packet = json.loads(raw_packet.decode())
-                if packet['type'] == 'clip':
-                    clip = Clip.from_dict(packet['data'])
+                if packet["type"] == "clip":
+                    clip = Clip.from_dict(packet["data"])
                     self.debug_print(f"New remote copy received... id: {clip.id}")
                     self._process_remote_clip(clip)
             except Exception as e:
@@ -105,14 +103,11 @@ class Clipboard:
                     self.debug_print(f"Error details: {str(e)}")
 
     def _process_remote_clip(self, clip: Clip) -> None:
-        with self.clip_lock:
-            self.curr_clip_content = clip.content
-
+        self.curr_clip_content = clip.content
         clip.source = 'remote'
         self.add_to_clip_history(clip, self.remote_clips)
         self.update_local_clipboard(clip.content)
 
-    
     def send_clip(self, clip: Clip) -> None:
         """Send the clip content to all connected peers."""
         try:
@@ -121,10 +116,12 @@ class Clipboard:
             if not peers:
                 self.debug_print("No active peers found to send clipboard content")
                 return
+            
             packet = {
                 'type': 'clip',
                 'data': clip.to_dict()
                 }
+            
             # Send packet to each active peer
             for username, peer in peers.items():
                 self.debug_print(f"Sending clip id {clip.id} to peer - {username} at {peer.address}")

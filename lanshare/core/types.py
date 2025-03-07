@@ -120,7 +120,6 @@ class Clip:
             source=data['source']
         )
 
-    @classmethod
     def to_dict(self) -> Dict[str, Any]:
         return {
             'id': self.id,
