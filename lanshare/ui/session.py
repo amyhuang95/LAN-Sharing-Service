@@ -5,13 +5,11 @@ from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.shortcuts import clear
 
-# Import your other modules (debug_view, user_list_view, message_view, etc.)
 from .debug_view import DebugView
 from .user_list_view import UserListView
 from .message_view import MessageView, send_new_message
 
-# Import the FileTransferClient (for sending files)
-from lanshare.core.ft_client import FileTransferClient  # adjust path as needed
+from lanshare.core.ft_client import FileTransferClient
 
 class InteractiveSession:
     def __init__(self, discovery, ft_server):
@@ -62,11 +60,11 @@ class InteractiveSession:
         """
         self.pending_file_requests[request_id] = (file_name, addr)
         print(f"\n[New File Request] ID={request_id}, File='{file_name}', From={addr}")
-        print("Type 'accept_file <request_id>' to accept or 'reject_file <request_id>' to reject.")
+        print("Type 'accept <request_id>' to accept or 'reject <request_id>' to reject.")
 
     def _accept_file_request(self, *args):
         if not args:
-            print("Usage: accept_file <request_id>")
+            print("Usage: accept <request_id>")
             return
         request_id = args[0]
         if request_id not in self.pending_file_requests:
@@ -79,7 +77,7 @@ class InteractiveSession:
 
     def _reject_file_request(self, *args):
         if not args:
-            print("Usage: reject_file <request_id>")
+            print("Usage: reject <request_id>")
             return
         request_id = args[0]
         if request_id not in self.pending_file_requests:

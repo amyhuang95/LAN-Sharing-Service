@@ -36,7 +36,7 @@ class FileTransferServer:
         try:
             # Receive file name (assume first 256 bytes are the padded file name)
             file_name = conn.recv(256).decode().strip()
-            request_id = str(uuid.uuid4())
+            request_id = str(uuid.uuid4())[:5]
             # Save request details so that later the UI can decide on it.
             self.pending_requests[request_id] = {
                 "conn": conn,
