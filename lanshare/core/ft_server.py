@@ -2,6 +2,7 @@ import socket
 import os
 import threading
 import uuid
+import time
 
 class FileTransferServer:
     def __init__(self, host='0.0.0.0', port=60000, save_directory='received_files', notify_ui_callback=None):
@@ -10,7 +11,7 @@ class FileTransferServer:
         self.save_directory = save_directory
         self.notify_ui_callback = notify_ui_callback  # Callback to notify the UI of a file request
         self.running = True
-        self.pending_requests = {}  # Map of request_id to request details
+        self.pending_requests = {}  # Map request_id -> request details
 
         if not os.path.exists(self.save_directory):
             os.makedirs(self.save_directory)
@@ -36,8 +37,7 @@ class FileTransferServer:
         try:
             # Receive file name (assume first 256 bytes are the padded file name)
             file_name = conn.recv(256).decode().strip()
-            request_id = str(uuid.uuid4())[:5]
-            # Save request details so that later the UI can decide on it.
+            request_id = str(uuid.uuid4())[:8]  # Shorter request ID (8 characters)
             self.pending_requests[request_id] = {
                 "conn": conn,
                 "addr": addr,
@@ -45,17 +45,26 @@ class FileTransferServer:
             }
             print(f"Received file request '{file_name}' from {addr}, request_id={request_id}")
             
-            # Notify the UI via callback (if provided)
+            # Notify the UI via callback
             if self.notify_ui_callback:
                 self.notify_ui_callback(request_id, file_name, addr)
+            
+            # Start a timer thread to auto-reject the request after 3 minutes (180 seconds)
+            threading.Thread(target=self._request_timeout, args=(request_id,), daemon=True).start()
         except Exception as e:
             print("Error handling file request:", e)
             conn.close()
+    
+    def _request_timeout(self, request_id):
+        # Wait for 180 seconds (3 minutes)
+        time.sleep(180)
+        # If the request is still pending, process it as a rejection
+        if request_id in self.pending_requests:
+            print(f"Request {request_id} timed out after 3 minutes.")
+            self.process_file_request(request_id, accept=False)
 
     def process_file_request(self, request_id: str, accept: bool):
-        """
-        Called by the UI after the user has decided.
-        """
+        """Called by the UI (or timeout) after the user decides to accept or reject the file."""
         request = self.pending_requests.pop(request_id, None)
         if not request:
             print(f"Request {request_id} not found.")
@@ -69,11 +78,12 @@ class FileTransferServer:
             try:
                 conn.sendall(b"REJECT")
             except Exception as e:
-                print("Error sending reject message:", e)
+                print("Error sending REJECT:", e)
             conn.close()
             print(f"File transfer '{file_name}' from {addr} was rejected.")
             return
 
+        # Accept the file transfer
         try:
             conn.sendall(b"ACCEPT")
             file_path = os.path.join(self.save_directory, file_name)
