@@ -40,6 +40,21 @@ class InteractiveSession:
         }
         self.running = True
         self._setup_prompt()
+    
+    def _setup_prompt(self):
+        self.style = Style.from_dict({
+            'username': '#00aa00 bold',
+            'at': '#888888',
+            'colon': '#888888',
+            'pound': '#888888',
+        })
+        self.completer = WordCompleter(list(self.commands.keys()))
+        self.session = PromptSession(
+            completer=self.completer,
+            style=self.style,
+            complete_while_typing=True
+        )
+
 
     def on_file_request(self, request_id, file_name, addr):
         """
