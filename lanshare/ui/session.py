@@ -29,8 +29,8 @@ class InteractiveSession:
             'lm': self._list_messages,
             'om': self._open_message,
             'ft': self._send_file,
-            'accept_file': self._accept_file_request,
-            'reject_file': self._reject_file_request,
+            'acc': self._accept_file_request,
+            'rej': self._reject_file_request,
             'help': self.show_help,
             'clear': self.clear_screen,
             'exit': self.exit_session,
@@ -60,11 +60,11 @@ class InteractiveSession:
         """
         self.pending_file_requests[request_id] = (file_name, addr)
         print(f"\n[New File Request] ID={request_id}, File='{file_name}', From={addr}")
-        print("Type 'accept <request_id>' to accept or 'reject <request_id>' to reject.")
+        print("Type 'acc <request_id>' to accept or 'rej <request_id>' to reject.")
 
     def _accept_file_request(self, *args):
         if not args:
-            print("Usage: accept <request_id>")
+            print("Usage: acc <request_id>")
             return
         request_id = args[0]
         if request_id not in self.pending_file_requests:
@@ -77,7 +77,7 @@ class InteractiveSession:
 
     def _reject_file_request(self, *args):
         if not args:
-            print("Usage: reject <request_id>")
+            print("Usage: rej <request_id>")
             return
         request_id = args[0]
         if request_id not in self.pending_file_requests:
