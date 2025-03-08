@@ -13,6 +13,7 @@ import uuid
 from lanshare.config.settings import Config
 from lanshare.core.udp_discovery import UDPPeerDiscovery
 from lanshare.ui.session import InteractiveSession
+from lanshare.core.ft_server import FileTransferServer
 
 def generate_user_id(username: str) -> str:
     """Generates a short random ID for the user.
@@ -45,9 +46,14 @@ def main():
         config = Config()
         discovery = UDPPeerDiscovery(username_with_id, config)
         discovery.start()
+
+        # Start the file transfer server on a fixed port (60000)
+        ft_server = FileTransferServer(port=60000, save_directory='received_files')
+        ft_server.start()
+        
         
         # Start terminal UI
-        session = InteractiveSession(discovery)
+        session = InteractiveSession(discovery, ft_server)
         session.start()
 
 if __name__ == "__main__":

@@ -8,9 +8,13 @@ from prompt_toolkit.shortcuts import clear
 from .debug_view import DebugView
 from .user_list_view import UserListView
 from .message_view import MessageView, send_new_message
+from lanshare.core.ft_client import FileTransferClient
+
 
 class InteractiveSession:
-    def __init__(self, discovery):
+    def __init__(self, discovery, ft_server):
+        self.ft_server = ft_server  # Keep a reference for later shutdown
+
         self.discovery = discovery
         self.commands = {
             'ul': self._show_user_list,
@@ -21,7 +25,9 @@ class InteractiveSession:
             'help': self.show_help,
             'clear': self.clear_screen,
             'exit': self.exit_session,
-            'quit': self.exit_session
+            'quit': self.exit_session,
+            'ft': self._send_file, #new command
+
         }
         self.running = True
         self._setup_prompt()
@@ -94,6 +100,7 @@ class InteractiveSession:
         view = MessageView(self.discovery, other_party)
         view.show_conversation(other_party, conversation_id)
 
+
     def show_help(self, *args):
         """Show help message"""
         print("\nAvailable commands:")
@@ -101,6 +108,7 @@ class InteractiveSession:
         print("  msg    - Send a message (msg <username>)")
         print("  lm     - List all messages")
         print("  om     - Open a message conversation (om <conversation_id>)")
+        print("  ft     - Transfer a file(ft <username> <file_path>")
         print("  debug  - Toggle debug mode")
         print("  clear  - Clear screen")
         print("  help   - Show this help message")
@@ -113,6 +121,10 @@ class InteractiveSession:
     def exit_session(self, *args):
         """Exit the session"""
         self.running = False
+        # Clean up discovery and file transfer server resources
+        self.discovery.cleanup()
+        self.ft_server.stop()
+
         return True
 
     def get_prompt_text(self):
@@ -170,3 +182,30 @@ class InteractiveSession:
 
         # Cleanup
         self.discovery.cleanup()
+    
+
+    def _send_file(self, *args):
+        """
+        Initiates a file transfer to a specified recipient.
+        Usage: ft <username> <file_path>
+        """
+        if len(args) < 2:
+            print("Usage: ft <username> <file_path>")
+            return
+        
+        recipient = args[0]
+        file_path = args[1]
+        peers = self.discovery.list_peers()
+        
+        if recipient not in peers:
+            print(f"Error: User '{recipient}' not found or offline.")
+            return
+        
+        # Get the peer's IP address from the peer discovery service.
+        peer = peers[recipient]
+        
+        print(f"Attempting to send file '{file_path}' to {recipient} at {peer.address}...")
+        
+        # Create a FileTransferClient instance, using a dedicated file transfer port (60000).
+        client = FileTransferClient(server_ip=peer.address, port=60000)
+        client.send_file(file_path)
