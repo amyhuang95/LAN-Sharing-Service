@@ -197,6 +197,13 @@ class FileShareManager:
         self.ftp_handler.use_encoding = 'utf-8'
         # Force binary mode for all file transfers
         self.ftp_handler.use_binary = True
+        # Set the binary timeout to a higher value for larger files
+        self.ftp_handler.timeout = 300  # 5 minutes
+        # Increase buffer size for better performance
+        self.ftp_handler.ac_out_buffer_size = 32768
+        # Add debug logging for FTP
+        if self.config.debug_mode:
+            self.ftp_handler.log_prefix = "FTP: "
         
         # Add the user to the authorizer with full permissions to their share directory
         self.default_password = "anonymous"  # Simplified password for easier testing
@@ -706,6 +713,8 @@ class FileShareManager:
     #         except Exception as e:
     #             self.discovery.debug_print(f"Error checking orphaned resource {resource.path}: {e}")
     
+    # Replace the _download_resource method with this improved version
+
     def _download_resource(self, resource: SharedResource, host_ip: str) -> None:
         """Download a resource from a peer.
         
