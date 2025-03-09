@@ -529,7 +529,7 @@ class FileShareManager:
         
         self._save_resources()
         
-        # Announce access change
+        # Announce access change to the specific user
         try:
             packet = {
                 'type': 'file_share',
@@ -547,6 +547,11 @@ class FileShareManager:
                     json.dumps(packet).encode(),
                     (peer.address, self.config.port)
                 )
+                
+                # If adding access, also re-announce the resource to trigger download
+                if add:
+                    self._announce_resource(resource)
+                    self.discovery.debug_print(f"Re-announced resource {resource.id} after adding {username} to access list")
             
         except Exception as e:
             self.discovery.debug_print(f"Error updating resource access: {e}")
@@ -901,12 +906,18 @@ class FileShareManager:
                         if resource.owner != self.username and resource_id not in self.downloaded_resources:
                             peer = self.discovery.peers.get(resource.owner)
                             if peer:
+                                # Make sure the owner's directory exists
+                                owner_dir = self.share_dir / resource.owner
+                                owner_dir.mkdir(exist_ok=True)
+                                
                                 download_thread = threading.Thread(
                                     target=self._download_resource,
                                     args=(resource, peer.address)
                                 )
                                 download_thread.daemon = True
                                 download_thread.start()
+                                
+                                self.discovery.debug_print(f"Starting download for newly granted access to {resource.path}")
                     else:
                         # Remove access
                         resource.remove_user(username)
@@ -929,7 +940,7 @@ class FileShareManager:
                     self.discovery.debug_print(
                         f"You were {action_str} the access list for {os.path.basename(resource.path)} from {resource.owner}"
                     )
-            
+        
         except Exception as e:
             self.discovery.debug_print(f"Error handling access update: {e}")
             
