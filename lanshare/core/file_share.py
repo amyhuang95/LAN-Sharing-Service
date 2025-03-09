@@ -294,27 +294,37 @@ class FileShareManager:
                 ftp_password=self.default_password
             )
             
-            # Create symlink in user's share directory
+            # Create symlink or copy file in user's share directory
             resource_name = os.path.basename(path)
-            symlink_path = self.user_share_dir / resource_name
+            target_path = self.user_share_dir / resource_name
             
             # Handle name conflicts by appending a number
             counter = 1
             original_name = resource_name
-            while symlink_path.exists():
+            while target_path.exists():
                 name_parts = os.path.splitext(original_name)
-                resource_name = f"{name_parts[0]}_{counter}{name_parts[1]}"
-                symlink_path = self.user_share_dir / resource_name
+                resource_name = f"{name_parts[0]}_{counter}{name_parts[1] if len(name_parts) > 1 else ''}"
+                target_path = self.user_share_dir / resource_name
                 counter += 1
             
             # On Windows, we can't easily use symlinks, so we'll copy the file/dir
             if os.name == 'nt':
                 if is_directory:
-                    shutil.copytree(path, symlink_path)
+                    shutil.copytree(path, target_path)
                 else:
-                    shutil.copy2(path, symlink_path)
+                    shutil.copy2(path, target_path)
             else:
-                os.symlink(path, symlink_path)
+                if is_directory:
+                    # For directories, use a copy instead of a symlink for better compatibility
+                    self._recursive_copy(path, target_path)
+                else:
+                    # For files, a symlink is fine
+                    try:
+                        os.symlink(path, target_path)
+                    except Exception as e:
+                        # If symlink fails, fall back to copying
+                        self.discovery.debug_print(f"Symlink failed, falling back to copy: {e}")
+                        shutil.copy2(path, target_path)
             
             # Add to shared resources
             self.shared_resources[resource.id] = resource
@@ -329,6 +339,33 @@ class FileShareManager:
         except Exception as e:
             self.discovery.debug_print(f"Error sharing resource: {e}")
             return None
+    
+    def _recursive_copy(self, src_path, dest_path):
+        """Recursively copy a directory.
+        
+        Args:
+            src_path: Source directory path.
+            dest_path: Destination directory path.
+        """
+        try:
+            # Create destination directory
+            os.makedirs(dest_path, exist_ok=True)
+            
+            # Copy all files and subdirectories
+            for item in os.listdir(src_path):
+                src_item_path = os.path.join(src_path, item)
+                dest_item_path = os.path.join(dest_path, item)
+                
+                if os.path.isdir(src_item_path):
+                    # Recursively copy subdirectory
+                    self._recursive_copy(src_item_path, dest_item_path)
+                else:
+                    # Copy file
+                    shutil.copy2(src_item_path, dest_item_path)
+                    
+            self.discovery.debug_print(f"Recursively copied directory from {src_path} to {dest_path}")
+        except Exception as e:
+            self.discovery.debug_print(f"Error in recursive copy: {e}")
     
     def _announce_resource(self, resource: SharedResource) -> None:
         """Announce a shared resource to peers.
@@ -558,7 +595,8 @@ class FileShareManager:
             if resource.is_directory:
                 # For directories, we need to recursively download
                 try:
-                    self._download_directory(ftp, os.path.basename(resource.path), dest_path)
+                    os.makedirs(dest_path, exist_ok=True)
+                    self._download_directory_recursive(ftp, filename, dest_path)
                 except Exception as e:
                     self.discovery.debug_print(f"Error downloading directory: {e}")
             else:
@@ -584,8 +622,10 @@ class FileShareManager:
         except Exception as e:
             self.discovery.debug_print(f"Error in download_resource: {e}")
     
-    def _download_directory(self, ftp, remote_dir, local_dir):
+    def _download_directory_recursive(self, ftp, remote_dir, local_dir):
         """Download a directory recursively.
+        
+        This improved version handles directory structure better.
         
         Args:
             ftp: FTP connection.
@@ -596,41 +636,67 @@ class FileShareManager:
             # Create local directory
             os.makedirs(local_dir, exist_ok=True)
             
-            # Change to remote directory
-            ftp.cwd(remote_dir)
+            # Remember current directory
+            original_dir = ftp.pwd()
             
-            # Get directory listing
-            items = []
-            ftp.dir(items.append)
-            
-            # Process each item
-            for item in items:
-                parts = item.split()
-                if len(parts) < 9:
-                    continue
+            try:
+                # Change to remote directory
+                ftp.cwd(remote_dir)
+                self.discovery.debug_print(f"Changed to directory: {remote_dir}")
+                
+                # Get directory listing
+                file_list = []
+                ftp.dir(file_list.append)
+                self.discovery.debug_print(f"Directory contents: {file_list}")
+                
+                # Process each item
+                for item in file_list:
+                    # Parse the directory listing line
+                    # Format is typically: "drwxr-xr-x   2 user  group    4096 Jan 01 12:34 filename"
+                    parts = item.split(None, 8)
                     
-                name = parts[-1]
+                    # If no parts (empty line) or not enough parts, skip
+                    if len(parts) < 9:
+                        self.discovery.debug_print(f"Skipping invalid listing item: {item}")
+                        continue
+                    
+                    # Get the file/directory name (last part)
+                    name = parts[8]
+                    
+                    # Skip special directories
+                    if name in ('.', '..'):
+                        continue
+                    
+                    # Check if it's a directory (first character of permissions is 'd')
+                    is_dir = parts[0].startswith('d')
+                    
+                    # Create full local path for this item
+                    local_item_path = os.path.join(local_dir, name)
+                    
+                    if is_dir:
+                        # Recursively download directory
+                        self.discovery.debug_print(f"Found subdirectory: {name}")
+                        self._download_directory_recursive(ftp, name, local_item_path)
+                    else:
+                        # Download file
+                        self.discovery.debug_print(f"Downloading file: {name} to {local_item_path}")
+                        with open(local_item_path, 'wb') as f:
+                            ftp.retrbinary(f'RETR {name}', f.write)
                 
-                if name in ('.', '..'):
-                    continue
+                # Return to original directory
+                ftp.cwd(original_dir)
                 
-                # Check if it's a directory
-                is_dir = item.startswith('d')
+            except Exception as e:
+                self.discovery.debug_print(f"Error during directory download: {e}")
+                # Try to go back to original directory
+                try:
+                    ftp.cwd(original_dir)
+                except:
+                    pass
+                raise
                 
-                if is_dir:
-                    # Recursively download subdirectory
-                    self._download_directory(ftp, name, os.path.join(local_dir, name))
-                else:
-                    # Download file
-                    local_path = os.path.join(local_dir, name)
-                    with open(local_path, 'wb') as f:
-                        ftp.retrbinary(f'RETR {name}', f.write)
-            
-            # Return to parent directory
-            ftp.cwd('..')
-            
         except Exception as e:
-            self.discovery.debug_print(f"Error downloading directory: {e}")
+            self.discovery.debug_print(f"Error downloading directory {remote_dir}: {e}")
     
     def _handle_access_update(self, data: Dict, addr: tuple, add: bool) -> None:
         """Handle an access update.
