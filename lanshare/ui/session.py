@@ -164,18 +164,17 @@ class InteractiveSession:
         client.send_file(file_path)
 
     def show_help(self, *args):
-        print("\nAvailable commands:")
-        print("  ul             - List online users")
-        print("  msg <username> - Send a message")
-        print("  lm             - List all messages")
-        print("  om <conv_id>   - Open a conversation")
-        print("  ft <username> <file_path> - Send a file")
-        print("  acc <request_id>  - Accept an incoming file request")
-        print("  rej <request_id>  - Reject an incoming file request")
-        print("  debug          - Toggle debug mode")
-        print("  clear          - Clear screen")
-        print("  help           - Show this help message")
-        print("  exit           - Exit the session")
+        print("  ul     - List online users")
+        print("  msg    - Send a message (msg <username>)")
+        print("  lm     - List all messages")
+        print("  om     - Open a message conversation (om <conversation_id>)")
+        print("  ft     - Send a file (ft <username> <file_path> )")
+        print("  acc    - Accept an incoming file request (acc <request_id>)")
+        print("  rej    - Reject an incoming file request (rej <request_id>)")
+        print("  debug  - Toggle debug mode")
+        print("  clear  - Clear screen")
+        print("  help   - Show this help message")
+        print("  exit   - Exit the session")
 
     def clear_screen(self, *args):
         """Clear the terminal screen"""
