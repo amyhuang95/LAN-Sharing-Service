@@ -193,6 +193,11 @@ class FileShareManager:
         self.ftp_handler = FTPHandler
         self.ftp_handler.authorizer = self.authorizer
         
+        # Configure FTP handler for binary mode by default
+        self.ftp_handler.use_encoding = 'utf-8'
+        # Force binary mode for all file transfers
+        self.ftp_handler.use_binary = True
+        
         # Add the user to the authorizer with full permissions to their share directory
         self.default_password = "anonymous"  # Simplified password for easier testing
         self.authorizer.add_user(
