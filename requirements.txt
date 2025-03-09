@@ -1,2 +1,3 @@
 prompt-toolkit>=3.0.0,<4.0.0  # For interactive terminal UI
 typing-extensions>=4.0.0  # For type hints in Python 3.7+
+pyftpdlib>=2.0.1
