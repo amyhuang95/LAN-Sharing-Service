@@ -1,6 +1,7 @@
 """This module provides a file sharing view for the LAN sharing service."""
 
 import os
+import logging
 from datetime import datetime
 from prompt_toolkit.application import Application
 from prompt_toolkit.layout.containers import Window, HSplit, VSplit, FloatContainer, Float
@@ -30,6 +31,7 @@ class FileShareView:
         self.running = True
         self.command_buffer = Buffer()
         self.status_text = ""
+        self.status_history = []  # Store important messages
         self.selected_index = 0
         self.resources = []
         
@@ -60,17 +62,19 @@ class FileShareView:
             """Add access for a user"""
             if not self.resources:
                 self.status_text = "No resources available to modify access"
+                self._add_to_status_history("No resources available to modify access")
                 event.app.invalidate()
                 return
                 
             resource = self.resources[self.selected_index]
             if resource.owner != self.discovery.username:
                 self.status_text = "You can only modify access for resources you own"
+                self._add_to_status_history("You can only modify access for resources you own")
                 event.app.invalidate()
                 return
                 
             event.app.layout.focus(self.command_window)
-            self.status_text = f"Add access: Enter username to grant access to resource {resource.id[:8]}"
+            self.status_text = f"Add access: Enter username to grant access to resource {resource.id}"
             self.command_mode = "add_access"
             event.app.invalidate()
         
@@ -79,12 +83,14 @@ class FileShareView:
             """Remove access for a user"""
             if not self.resources:
                 self.status_text = "No resources available to modify access"
+                self._add_to_status_history("No resources available to modify access")
                 event.app.invalidate()
                 return
                 
             resource = self.resources[self.selected_index]
             if resource.owner != self.discovery.username:
                 self.status_text = "You can only modify access for resources you own"
+                self._add_to_status_history("You can only modify access for resources you own")
                 event.app.invalidate()
                 return
                 
@@ -98,12 +104,14 @@ class FileShareView:
             """Share with everyone"""
             if not self.resources:
                 self.status_text = "No resources available to modify access"
+                self._add_to_status_history("No resources available to modify access")
                 event.app.invalidate()
                 return
                 
             resource = self.resources[self.selected_index]
             if resource.owner != self.discovery.username:
                 self.status_text = "You can only modify access for resources you own"
+                self._add_to_status_history("You can only modify access for resources you own")
                 event.app.invalidate()
                 return
             
@@ -149,7 +157,22 @@ class FileShareView:
             'command': '#ffffff bg:#000088',
             'status': 'bold #ff0000',
             'help': 'italic #888888',
+            'history': '#ffcc00',  # Color for status history items
         })
+    
+    def _add_to_status_history(self, message):
+        """Add an important message to the status history.
+        
+        Args:
+            message: The message to add.
+        """
+        # Add timestamp to the message
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        self.status_history.append(f"[{timestamp}] {message}")
+        
+        # Keep only the last 5 messages
+        if len(self.status_history) > 5:
+            self.status_history = self.status_history[-5:]
     
     def _get_resources_text(self):
         """Generate the formatted resources list text"""
@@ -161,7 +184,7 @@ class FileShareView:
             ("class:title", "  Shared Resources "),
             ("", "\n"),
             ("", "  "),
-            ("class:border", "╭" + "─" * 100 + "╮"),  # Increase total width
+            ("class:border", "╭" + "─" * 110 + "╮"),  # Increased width to 110
             ("", "\n")
         ]
         
@@ -170,7 +193,7 @@ class FileShareView:
                 ("", "  "),
                 ("class:border", "│"),
                 ("fg:gray", " No resources shared yet"),
-                ("", " " * (99 - len("No resources shared yet"))),  # Adjust spacing
+                ("", " " * (109 - len("No resources shared yet"))),  # Adjusted spacing
                 ("class:border", "│"),
                 ("", "\n")
             ])
@@ -179,11 +202,11 @@ class FileShareView:
             text.extend([
                 ("", "  "),
                 ("class:border", "│"),
-                ("class:label", f" {'ID':<8} {'Type':<10} {'Name':<20} {'Owner':<12} {'Access':<12} {'Shared On':<16} {'Last Modified':<18}"),
+                ("class:label", f" {'ID':<8} {'Type':<10} {'Name':<20} {'Owner':<12} {'Access':<12} {'Shared On':<16} {'Last Modified':<25}"),
                 ("class:border", "│"),
                 ("", "\n"),
                 ("", "  "),
-                ("class:border", "├" + "─" * 100 + "┤"),  # Increase total width
+                ("class:border", "├" + "─" * 110 + "┤"),  # Increased width to 110
                 ("", "\n")
             ])
             
@@ -218,7 +241,7 @@ class FileShareView:
                     (f"{style_prefix}class:{'owner' if owner == 'You' else 'peer'}", f"{owner:<12} "),
                     (f"{style_prefix}class:access", f"{access:<12} "),
                     (f"{style_prefix}class:date", f"{shared_date:<16} "),
-                    (f"{style_prefix}class:date", f"{mod_time:<18}"),
+                    (f"{style_prefix}class:date", f"{mod_time:<25}"),
                     ("class:border", "│"),
                     ("", "\n")
                 ])
@@ -226,13 +249,20 @@ class FileShareView:
         # Footer
         text.extend([
             ("", "  "),
-            ("class:border", "╰" + "─" * 100 + "╯"),  # Increase total width
+            ("class:border", "╰" + "─" * 110 + "╯"),  # Increased width to 110
             ("", "\n\n"),
             ("class:help", "  Commands:\n"),
             ("class:help", "    [s] Share file/directory   [a] Add user access    [r] Remove user access\n"),
             ("class:help", "    [e] Toggle share with everyone    [↑/↓] Navigate    [q] Exit\n\n"),
             ("class:status", f"  {self.status_text if self.status_text else ''}\n")
         ])
+        
+        # Add status history section
+        if self.status_history:
+            text.append(("class:title", "\n  Recent Actions:\n"))
+            for msg in self.status_history:
+                text.append(("class:history", f"  • {msg}\n"))
+        
         return text
     
     def _process_command(self, command):
@@ -250,6 +280,7 @@ class FileShareView:
         elif self.command_mode == "add_access":
             if not self.resources:
                 self.status_text = "No resources available"
+                self._add_to_status_history("No resources available")
                 return
                 
             resource = self.resources[self.selected_index]
@@ -257,6 +288,7 @@ class FileShareView:
         elif self.command_mode == "remove_access":
             if not self.resources:
                 self.status_text = "No resources available"
+                self._add_to_status_history("No resources available")
                 return
                 
             resource = self.resources[self.selected_index]
@@ -273,6 +305,7 @@ class FileShareView:
         
         if not os.path.exists(path):
             self.status_text = f"Path not found: {path}"
+            self._add_to_status_history(f"Path not found: {path}")
             return
             
         # Use file_share_manager directly
@@ -281,8 +314,10 @@ class FileShareView:
         if resource:
             resource_type = "directory" if resource.is_directory else "file"
             self.status_text = f"Shared {resource_type}: {path}"
+            self._add_to_status_history(f"Shared {resource_type}: {path}")
         else:
             self.status_text = f"Failed to share: {path}"
+            self._add_to_status_history(f"Failed to share: {path}")
     
     def _manage_access(self, resource_id, username, add):
         """Manage access to a shared resource.
@@ -302,8 +337,10 @@ class FileShareView:
         if result:
             action = "added to" if add else "removed from"
             self.status_text = f"Successfully {action} access list for {username}"
+            self._add_to_status_history(f"Successfully {action} access list for {username}")
         else:
             self.status_text = f"Failed to update access. Check that you own the resource and the username is correct."
+            self._add_to_status_history(f"Failed to update access. Check that you own the resource and the username is correct.")
     
     def _share_with_all(self, resource_id, share_all):
         """Share a resource with everyone.
@@ -321,14 +358,40 @@ class FileShareView:
         if result:
             status = "shared with everyone" if share_all else "no longer shared with everyone"
             self.status_text = f"Resource is now {status}"
+            self._add_to_status_history(f"Resource is now {status}")
         else:
             self.status_text = "Failed to update sharing settings. Check that you own the resource."
+            self._add_to_status_history("Failed to update sharing settings. Check that you own the resource.")
+    
+    def _configure_ftp_logging(self):
+        """Configure the FTP server to be less verbose."""
+        try:
+            # Try to suppress FTP server logs
+            
+            # Set FTP server settings
+            if hasattr(self.file_share_manager, 'ftp_handler'):
+                # Set empty prefix and banner
+                self.file_share_manager.ftp_handler.log_prefix = ""
+                self.file_share_manager.ftp_handler.banner = ""
+                
+                # Increase the logging level
+                logging.getLogger('pyftpdlib').setLevel(logging.CRITICAL)
+                logging.getLogger('pyftpdlib.server').setLevel(logging.CRITICAL)
+                logging.getLogger('pyftpdlib.handler').setLevel(logging.CRITICAL)
+                logging.getLogger('pyftpdlib.authorizer').setLevel(logging.CRITICAL)
+                logging.getLogger('pyftpdlib.filesystems').setLevel(logging.CRITICAL)
+        except Exception:
+            # If something goes wrong, just continue - this is not critical
+            pass
     
     def show(self):
         """Show the file sharing view"""
         self.discovery.in_live_view = True
         self.command_mode = None
         self.status_text = ""
+        
+        # Configure the FTP server to be less verbose if possible
+        self._configure_ftp_logging()
         
         # Create the main window for resource display
         self.main_window = Window(

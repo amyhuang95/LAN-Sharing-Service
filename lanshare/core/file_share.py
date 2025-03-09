@@ -16,6 +16,7 @@ from pyftpdlib.handlers import FTPHandler
 from pyftpdlib.servers import FTPServer
 
 from .types import Peer
+import logging
 
 
 class SharedResource:
@@ -727,6 +728,9 @@ class FileShareManager:
             ftp = ftplib.FTP()
             ftp.connect(host_ip, self.ftp_address[1])
             
+            # Set encoding for control channel
+            ftp.encoding = 'utf-8'
+            
             # Try different login methods
             login_successful = False
             
@@ -752,6 +756,9 @@ class FileShareManager:
             if not login_successful:
                 self.discovery.debug_print(f"All FTP login attempts failed - cannot download resource")
                 return
+            
+            # Always set binary mode for all file transfers
+            ftp.sendcmd('TYPE I')
             
             # List files in current directory
             file_list = []
@@ -787,7 +794,7 @@ class FileShareManager:
                     os.makedirs(dest_dir, exist_ok=True)
                     with open(dest_path, 'wb') as f:
                         self.discovery.debug_print(f"Starting download of {filename}")
-                        ftp.retrbinary(f'RETR {filename}', f.write)
+                        ftp.retrbinary(f'RETR {filename}', f.write, blocksize=8192)
                     self.discovery.debug_print(f"Successfully downloaded file to {dest_path}")
                 except Exception as e:
                     self.discovery.debug_print(f"Error downloading file: {e}")
@@ -860,10 +867,10 @@ class FileShareManager:
                         self.discovery.debug_print(f"Found subdirectory: {name}")
                         self._download_directory_recursive(ftp, name, local_item_path)
                     else:
-                        # Download file
+                        # Download file in binary mode with larger block size
                         self.discovery.debug_print(f"Downloading file: {name} to {local_item_path}")
                         with open(local_item_path, 'wb') as f:
-                            ftp.retrbinary(f'RETR {name}', f.write)
+                            ftp.retrbinary(f'RETR {name}', f.write, blocksize=8192)
                 
                 # Return to original directory
                 ftp.cwd(original_dir)
