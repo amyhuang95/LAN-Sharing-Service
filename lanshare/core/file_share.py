@@ -672,22 +672,22 @@ class FileShareManager:
             self.discovery.debug_print(f"Error handling resource announcement: {e}")
         
         
-    def _cleanup_orphaned_resources(self) -> None:
-        """Remove any resources that we no longer have access to."""
-        for resource_id, resource in list(self.received_resources.items()):
-            try:
-                # Check if the resource owner is still online
-                owner_peer = self.discovery.peers.get(resource.owner)
-                if not owner_peer:
-                    # Skip resources without an online owner for now
-                    continue
+    # def _cleanup_orphaned_resources(self) -> None:
+    #     """Remove any resources that we no longer have access to."""
+    #     for resource_id, resource in list(self.received_resources.items()):
+    #         try:
+    #             # Check if the resource owner is still online
+    #             owner_peer = self.discovery.peers.get(resource.owner)
+    #             if not owner_peer:
+    #                 # Skip resources without an online owner for now
+    #                 continue
                     
-                # Check if we still have access
-                # We can't directly check here, so we'll remove based on explicit revocation
-                pass
+    #             # Check if we still have access
+    #             # We can't directly check here, so we'll remove based on explicit revocation
+    #             pass
                 
-            except Exception as e:
-                self.discovery.debug_print(f"Error checking orphaned resource {resource.path}: {e}")
+    #         except Exception as e:
+    #             self.discovery.debug_print(f"Error checking orphaned resource {resource.path}: {e}")
     
     def _download_resource(self, resource: SharedResource, host_ip: str) -> None:
         """Download a resource from a peer.
