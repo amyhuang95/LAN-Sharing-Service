@@ -8,7 +8,7 @@ from pathlib import Path
 import json
 import socket
 import ftplib
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple, Union
 from datetime import datetime
 
 from pyftpdlib.authorizers import DummyAuthorizer
@@ -388,6 +388,12 @@ class FileShareManager:
                 self.discovery.debug_print(f"Path does not exist: {path}")
                 return None
             
+            # Check if already shared
+            existing_resource = self._find_existing_shared_resource(path)
+            if existing_resource:
+                self.discovery.debug_print(f"Resource already shared with ID: {existing_resource.id}")
+                return existing_resource
+                
             is_directory = os.path.isdir(path)
             
             # Create shared resource with password
@@ -957,6 +963,24 @@ class FileShareManager:
             
         except Exception as e:
             self.discovery.debug_print(f"Error removing shared resource: {e}")
+    
+    def _find_existing_shared_resource(self, path: str) -> Optional[SharedResource]:
+        """Check if a path is already shared by the current user.
+        
+        Args:
+            path: Path to check.
+            
+        Returns:
+            The existing SharedResource if already shared, None otherwise.
+        """
+        normalized_path = os.path.abspath(path)
+        
+        # Check if the same path is already shared
+        for resource in self.shared_resources.values():
+            if os.path.abspath(resource.path) == normalized_path and resource.owner == self.username:
+                return resource
+            
+        return None
     
     def list_shared_resources(self, include_own: bool = True) -> List[SharedResource]:
         """List shared resources.

@@ -161,7 +161,7 @@ class FileShareView:
             ("class:title", "  Shared Resources "),
             ("", "\n"),
             ("", "  "),
-            ("class:border", "╭" + "─" * 80 + "╮"),
+            ("class:border", "╭" + "─" * 100 + "╮"),  # Increase total width
             ("", "\n")
         ]
         
@@ -170,7 +170,7 @@ class FileShareView:
                 ("", "  "),
                 ("class:border", "│"),
                 ("fg:gray", " No resources shared yet"),
-                ("", " " * (79 - len("No resources shared yet"))),
+                ("", " " * (99 - len("No resources shared yet"))),  # Adjust spacing
                 ("class:border", "│"),
                 ("", "\n")
             ])
@@ -179,11 +179,11 @@ class FileShareView:
             text.extend([
                 ("", "  "),
                 ("class:border", "│"),
-                ("class:label", f" {'ID':<10} {'Type':<10} {'Name':<25} {'Owner':<15} {'Access':<15} {'Shared On':<14}"),
+                ("class:label", f" {'ID':<8} {'Type':<10} {'Name':<20} {'Owner':<12} {'Access':<12} {'Shared On':<16} {'Last Modified':<18}"),
                 ("class:border", "│"),
                 ("", "\n"),
                 ("", "  "),
-                ("class:border", "├" + "─" * 80 + "┤"),
+                ("class:border", "├" + "─" * 100 + "┤"),  # Increase total width
                 ("", "\n")
             ])
             
@@ -192,13 +192,19 @@ class FileShareView:
                 resource_type = "Directory" if resource.is_directory else "File"
                 owner = "You" if resource.owner == self.discovery.username else resource.owner
                 access = "Everyone" if resource.shared_to_all else ", ".join(resource.allowed_users) or "Only owner"
-                if len(access) > 15:
-                    access = access[:12] + "..."
+                if len(access) > 12:
+                    access = access[:9] + "..."
                 shared_date = resource.timestamp.strftime("%Y-%m-%d %H:%M")
                 
+                # Format modification time
+                try:
+                    mod_time = datetime.fromtimestamp(resource.modified_time).strftime("%Y-%m-%d %H:%M")
+                except:
+                    mod_time = "Unknown"
+                
                 name = os.path.basename(resource.path)
-                if len(name) > 25:
-                    name = name[:22] + "..."
+                if len(name) > 20:
+                    name = name[:17] + "..."
                 
                 # Apply selection highlight if this is the selected item
                 style_prefix = "class:selected " if idx == self.selected_index else ""
@@ -206,12 +212,13 @@ class FileShareView:
                 text.extend([
                     ("", "  "),
                     ("class:border", "│"),
-                    (f"{style_prefix}class:resource_id", f" {resource.id[:8]:<10} "),
+                    (f"{style_prefix}class:resource_id", f" {resource.id[:7]:<8} "),
                     (f"{style_prefix}class:resource_type", f"{resource_type:<10} "),
-                    (f"{style_prefix}", f"{name:<25} "),
-                    (f"{style_prefix}class:{'owner' if owner == 'You' else 'peer'}", f"{owner:<15} "),
-                    (f"{style_prefix}class:access", f"{access:<15} "),
-                    (f"{style_prefix}class:date", f"{shared_date:<14}"),
+                    (f"{style_prefix}", f"{name:<20} "),
+                    (f"{style_prefix}class:{'owner' if owner == 'You' else 'peer'}", f"{owner:<12} "),
+                    (f"{style_prefix}class:access", f"{access:<12} "),
+                    (f"{style_prefix}class:date", f"{shared_date:<16} "),
+                    (f"{style_prefix}class:date", f"{mod_time:<18}"),
                     ("class:border", "│"),
                     ("", "\n")
                 ])
@@ -219,7 +226,7 @@ class FileShareView:
         # Footer
         text.extend([
             ("", "  "),
-            ("class:border", "╰" + "─" * 80 + "╯"),
+            ("class:border", "╰" + "─" * 100 + "╯"),  # Increase total width
             ("", "\n\n"),
             ("class:help", "  Commands:\n"),
             ("class:help", "    [s] Share file/directory   [a] Add user access    [r] Remove user access\n"),
