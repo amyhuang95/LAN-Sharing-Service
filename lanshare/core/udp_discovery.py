@@ -10,6 +10,7 @@ import uuid
 
 from .discovery import PeerDiscovery
 from .types import Peer, Message
+from .file_share import FileShareManager
 from ..config.settings import Config
 
 class UDPPeerDiscovery(PeerDiscovery):
@@ -20,6 +21,7 @@ class UDPPeerDiscovery(PeerDiscovery):
     discovery is done by broadcasting its presence and listens for other peers' 
     broadcasts and direct messages. Broadcast packets are labeled with type 
     'announcement'. Message communication packets are labeled with type 'message'.
+    File sharing packets are labeled with type 'file_share'.
     """
        
     def __init__(self, username: str, config: Config):
@@ -37,6 +39,7 @@ class UDPPeerDiscovery(PeerDiscovery):
             in_live_view: A flag indicating if the user is in live view mode.
             running: A flag indicating if the service is running.
             udp_socket: The UDP socket used for both broadcast and direct messages.
+            file_share_manager: The file sharing manager.
         """
 
         self.username = username
@@ -52,14 +55,19 @@ class UDPPeerDiscovery(PeerDiscovery):
         self.udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         # Allow broadcasting from any interface
         self.udp_socket.bind(('', self.config.port))  # Use empty string instead of '0.0.0.0'
+        
+        # Initialize file sharing manager
+        self.file_share_manager = FileShareManager(username, self)
 
     def start(self) -> None:
         """Start all services."""
         self._start_threads()
+        self.file_share_manager.start()
 
     def stop(self) -> None:
         """Stop all services."""
         self.running = False
+        self.file_share_manager.stop()
         self.udp_socket.close()
 
     def _start_threads(self) -> None:
@@ -113,11 +121,13 @@ class UDPPeerDiscovery(PeerDiscovery):
                 packet = json.loads(raw_packet.decode())
                 self.debug_print(f"Decoded packet type: {packet['type']}")
 
-                # Check whether the packet is a broadcast announcement or a message
+                # Check whether the packet is a broadcast announcement, a message, or a file share packet
                 if packet['type'] == 'announcement':
                     self._handle_announcement(packet, addr)
                 elif packet['type'] == 'message':
                     self._handle_message(packet)
+                elif packet['type'] == 'file_share':
+                    self.file_share_manager.handle_file_share_packet(packet, addr)
                 
             except Exception as e:
                 if self.running:
