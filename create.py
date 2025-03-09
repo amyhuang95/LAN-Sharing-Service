@@ -32,8 +32,8 @@ def generate_user_id(username: str) -> str:
     return f"{username}#{random_id}"
 
 def create_lanshare_folder():
-    """Create the lanshared folder when the application starts."""
-    shared_dir = Path.home() / 'lanshared'
+    """Create the shared folder when the application starts."""
+    shared_dir = Path.cwd() / 'shared'
     if shared_dir.exists():
         # If folder exists from a previous session that didn't exit properly, clean it
         shutil.rmtree(shared_dir)
@@ -44,8 +44,8 @@ def create_lanshare_folder():
     return shared_dir
 
 def cleanup_lanshare_folder():
-    """Remove the lanshared folder when the application exits."""
-    shared_dir = Path.home() / 'lanshared'
+    """Remove the shared folder when the application exits."""
+    shared_dir = Path.cwd() / 'shared'
     if shared_dir.exists():
         try:
             shutil.rmtree(shared_dir)
@@ -67,7 +67,7 @@ def main():
     # Register the cleanup function to run when the program exits normally
     atexit.register(cleanup_lanshare_folder)
     
-    # Create the lanshared folder
+    # Create the shared folder
     create_lanshare_folder()
     
     # Parse user specifications

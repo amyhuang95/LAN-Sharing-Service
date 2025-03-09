@@ -1,0 +1,16 @@
+2025-03-09 15:52:40 - INFO - Starting new log session
+2025-03-09 15:52:40 - INFO - concurrency model: async
+2025-03-09 15:52:40 - INFO - masquerade (NAT) address: None
+2025-03-09 15:52:40 - INFO - passive ports: None
+2025-03-09 15:52:40 - DEBUG - poller: 'pyftpdlib.ioloop.Kqueue'
+2025-03-09 15:52:40 - DEBUG - authorizer: 'pyftpdlib.authorizers.DummyAuthorizer'
+2025-03-09 15:52:40 - DEBUG - use sendfile(2): True
+2025-03-09 15:52:40 - DEBUG - handler: 'pyftpdlib.handlers.type'
+2025-03-09 15:52:40 - DEBUG - max connections: 512
+2025-03-09 15:52:40 - DEBUG - max connections per ip: unlimited
+2025-03-09 15:52:40 - DEBUG - timeout: 300
+2025-03-09 15:52:40 - DEBUG - banner: 'pyftpdlib 2.0.1 ready.'
+2025-03-09 15:52:40 - DEBUG - max login attempts: 3
+2025-03-09 15:52:40 - INFO - >>> starting FTP server on 0.0.0.0:12346, pid=43206 <<<
+2025-03-09 15:52:40 - DEBUG - Using selector: KqueueSelector
+2025-03-09 15:53:24 - DEBUG - [debug] closing IOLoop (<pyftpdlib.ioloop.Kqueue (fds=1, tasks=0) at 0x1051d5050>)

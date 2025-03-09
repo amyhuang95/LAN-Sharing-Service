@@ -18,9 +18,23 @@ from pyftpdlib.servers import FTPServer
 from .types import Peer
 import logging
 
-# Set up a logger (will be configured in FileShareManager init)
-logger = logging.getLogger('file_share')
+# Configure logging to write to a file
+log_file_dir = Path.cwd()  # Current working directory (project home)
+log_file = log_file_dir / 'file_transfer_log.txt'
 
+# If the log file already exists, delete it to start fresh
+if log_file.exists():
+    log_file.unlink()  # This deletes the file
+
+# Configure logging with the clean log file
+logging.basicConfig(
+    filename=str(log_file),
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger('file_share')
+logger.info("Starting new log session")
 
 class SharedResource:
     """Represents a shared file or directory in the LAN sharing service.
@@ -177,19 +191,8 @@ class FileShareManager:
         self.config = discovery_service.config
         
         # Directory where shared files are stored
-        self.share_dir = Path.home() / 'lanshared'
+        self.share_dir = Path.cwd() / 'shared'
         self.share_dir.mkdir(exist_ok=True)
-        
-        # Configure logging to write to a file
-        log_file = self.share_dir / 'file_transfer_log.txt'
-        # Set up a file handler (don't use basicConfig to avoid affecting other loggers)
-        file_handler = logging.FileHandler(str(log_file))
-        file_handler.setLevel(logging.DEBUG)
-        file_handler.setFormatter(logging.Formatter(
-            '%(asctime)s - %(levelname)s - %(message)s',
-            '%Y-%m-%d %H:%M:%S'
-        ))
-        logger.addHandler(file_handler)
         
         # Create directory for this user's shared files
         self.user_share_dir = self.share_dir / username

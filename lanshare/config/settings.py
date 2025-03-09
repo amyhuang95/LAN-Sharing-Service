@@ -25,7 +25,7 @@ class Config:
         self.debug_messages = []
         
         # Store the config in the lanshared folder (temporary)
-        self.shared_dir = Path.home() / 'lanshared'
+        self.shared_dir = Path.cwd() / 'lanshared'
         self.config_file = self.shared_dir / '.lanshare.conf'
         
         self.max_debug_messages = 100
