@@ -605,11 +605,27 @@ class FileShareManager:
             if resource.owner == self.username:
                 return
             
-            # Check if we can access this resource
-            if resource.can_access(self.username):
-                # Check if we already have this resource
-                existing_resource = self.received_resources.get(resource.id)
+            # Check if we already have this resource
+            existing_resource = self.received_resources.get(resource.id)
+            
+            # If we had the resource but no longer have access, remove it
+            if existing_resource and not resource.can_access(self.username):
+                self.discovery.debug_print(f"Access revoked for: {resource.path}")
+                self._remove_shared_resource(existing_resource)
                 
+                # Remove from downloaded resources list
+                if resource.id in self.downloaded_resources:
+                    self.downloaded_resources.remove(resource.id)
+                    
+                # Remove from received resources
+                if resource.id in self.received_resources:
+                    del self.received_resources[resource.id]
+                    
+                self._save_resources()
+                return
+            
+            # Normal handling for resources we can access
+            if resource.can_access(self.username):
                 if existing_resource:
                     # If we have it, check if it's been updated
                     if resource.modified_time > existing_resource.modified_time:
@@ -654,6 +670,24 @@ class FileShareManager:
             
         except Exception as e:
             self.discovery.debug_print(f"Error handling resource announcement: {e}")
+        
+        
+    def _cleanup_orphaned_resources(self) -> None:
+        """Remove any resources that we no longer have access to."""
+        for resource_id, resource in list(self.received_resources.items()):
+            try:
+                # Check if the resource owner is still online
+                owner_peer = self.discovery.peers.get(resource.owner)
+                if not owner_peer:
+                    # Skip resources without an online owner for now
+                    continue
+                    
+                # Check if we still have access
+                # We can't directly check here, so we'll remove based on explicit revocation
+                pass
+                
+            except Exception as e:
+                self.discovery.debug_print(f"Error checking orphaned resource {resource.path}: {e}")
     
     def _download_resource(self, resource: SharedResource, host_ip: str) -> None:
         """Download a resource from a peer.
@@ -868,7 +902,20 @@ class FileShareManager:
                                 download_thread.daemon = True
                                 download_thread.start()
                     else:
+                        # Remove access
                         resource.remove_user(username)
+                        
+                        # If we're receiving this message and we're not the owner, remove the file
+                        if resource.owner != self.username:
+                            self._remove_shared_resource(resource)
+                            
+                            # Also remove from downloaded resources list
+                            if resource_id in self.downloaded_resources:
+                                self.downloaded_resources.remove(resource_id)
+                                
+                            # Remove from received resources if it's not shared to all
+                            if not resource.shared_to_all and resource_id in self.received_resources:
+                                del self.received_resources[resource_id]
                     
                     self._save_resources()
                     
@@ -879,6 +926,37 @@ class FileShareManager:
             
         except Exception as e:
             self.discovery.debug_print(f"Error handling access update: {e}")
+            
+    def _remove_shared_resource(self, resource: SharedResource) -> None:
+        """Remove a shared resource from the file system when access is revoked.
+        
+        Args:
+            resource: The resource to remove.
+        """
+        try:
+            # Get the path to the resource in the shared directory
+            resource_path = self.share_dir / resource.owner / os.path.basename(resource.path)
+            
+            if not resource_path.exists():
+                self.discovery.debug_print(f"Resource not found for removal: {resource_path}")
+                return
+                
+            # Remove the file or directory
+            if resource.is_directory:
+                try:
+                    shutil.rmtree(resource_path)
+                    self.discovery.debug_print(f"Removed shared directory: {resource_path}")
+                except Exception as e:
+                    self.discovery.debug_print(f"Error removing directory {resource_path}: {e}")
+            else:
+                try:
+                    os.remove(resource_path)
+                    self.discovery.debug_print(f"Removed shared file: {resource_path}")
+                except Exception as e:
+                    self.discovery.debug_print(f"Error removing file {resource_path}: {e}")
+            
+        except Exception as e:
+            self.discovery.debug_print(f"Error removing shared resource: {e}")
     
     def list_shared_resources(self, include_own: bool = True) -> List[SharedResource]:
         """List shared resources.
