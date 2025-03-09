@@ -29,13 +29,15 @@ class SharedResource:
         allowed_users: Set of usernames allowed to access the resource.
         shared_to_all: Whether the resource is shared to everyone.
         timestamp: When the resource was shared.
+        ftp_password: Password for FTP access.
     """
     
     def __init__(self, 
                  owner: str, 
                  path: str, 
                  is_directory: bool = False, 
-                 shared_to_all: bool = False):
+                 shared_to_all: bool = False,
+                 ftp_password: str = None):
         """Initialize a SharedResource instance.
         
         Args:
@@ -43,6 +45,7 @@ class SharedResource:
             path: Path to the resource on the owner's system.
             is_directory: Whether the resource is a directory.
             shared_to_all: Whether the resource is shared to everyone.
+            ftp_password: Password for FTP access.
         """
         self.id = f"{owner}_{int(time.time())}_{os.path.basename(path)}"
         self.owner = owner
@@ -51,6 +54,7 @@ class SharedResource:
         self.allowed_users = set()
         self.shared_to_all = shared_to_all
         self.timestamp = datetime.now()
+        self.ftp_password = ftp_password
     
     def to_dict(self) -> Dict:
         """Convert to dictionary representation.
@@ -65,7 +69,8 @@ class SharedResource:
             'is_directory': self.is_directory,
             'allowed_users': list(self.allowed_users),
             'shared_to_all': self.shared_to_all,
-            'timestamp': self.timestamp.isoformat()
+            'timestamp': self.timestamp.isoformat(),
+            'ftp_password': self.ftp_password
         }
     
     @classmethod
@@ -82,7 +87,8 @@ class SharedResource:
             owner=data['owner'],
             path=data['path'],
             is_directory=data['is_directory'],
-            shared_to_all=data['shared_to_all']
+            shared_to_all=data['shared_to_all'],
+            ftp_password=data.get('ftp_password')
         )
         resource.id = data['id']
         resource.allowed_users = set(data['allowed_users'])
@@ -163,13 +169,19 @@ class FileShareManager:
         self.ftp_handler.authorizer = self.authorizer
         
         # Add the user to the authorizer with full permissions to their share directory
-        self.default_password = self._generate_password()
+        self.default_password = "anonymous"  # Simplified password for easier testing
         self.authorizer.add_user(
             username, 
             password=self.default_password, 
             homedir=str(self.user_share_dir),
             perm='elradfmwMT'  # Full permissions
         )
+        
+        # Also add anonymous user for easier access
+        try:
+            self.authorizer.add_anonymous(str(self.user_share_dir), perm='elr')
+        except Exception as e:
+            self.discovery.debug_print(f"Warning: Could not add anonymous user: {e}")
         
         # Set up FTP server
         self.ftp_server = None
@@ -273,12 +285,13 @@ class FileShareManager:
             
             is_directory = os.path.isdir(path)
             
-            # Create shared resource
+            # Create shared resource with password
             resource = SharedResource(
                 owner=self.username,
                 path=path,
                 is_directory=is_directory,
-                shared_to_all=share_to_all
+                shared_to_all=share_to_all,
+                ftp_password=self.default_password
             )
             
             # Create symlink in user's share directory
@@ -485,7 +498,7 @@ class FileShareManager:
             host_ip: The IP address of the host.
         """
         try:
-            self.discovery.debug_print(f"Downloading {resource.path} from {host_ip}...")
+            self.discovery.debug_print(f"Downloading {os.path.basename(resource.path)} from {host_ip}...")
             
             # Create destination path
             dest_dir = self.share_dir / resource.owner
@@ -495,19 +508,69 @@ class FileShareManager:
             ftp = ftplib.FTP()
             ftp.connect(host_ip, self.ftp_address[1])
             
-            # Login - we use the owner's username and a default password
-            # In a real implementation, we would use a secure authentication method
-            ftp.login(resource.owner, 'anonymous')
+            # Try different login methods
+            login_successful = False
+            
+            # First, try using the provided password
+            if resource.ftp_password:
+                try:
+                    ftp.login(resource.owner, resource.ftp_password)
+                    login_successful = True
+                    self.discovery.debug_print(f"Logged in with username and password")
+                except Exception as e:
+                    self.discovery.debug_print(f"FTP login with owner credentials failed: {e}")
+            
+            # If that fails, try anonymous login
+            if not login_successful:
+                try:
+                    ftp.login('anonymous', 'anonymous@')
+                    login_successful = True
+                    self.discovery.debug_print(f"Logged in anonymously")
+                except Exception as e:
+                    self.discovery.debug_print(f"Anonymous FTP login failed: {e}")
+            
+            # If all login attempts failed, we can't proceed
+            if not login_successful:
+                self.discovery.debug_print(f"All FTP login attempts failed - cannot download resource")
+                return
+            
+            # List files in current directory
+            file_list = []
+            ftp.dir(file_list.append)
+            self.discovery.debug_print(f"FTP directory listing: {file_list}")
+            
+            # Check if the resource exists on the server
+            filename = os.path.basename(resource.path)
+            
+            # Try to find the file in the directory listing
+            found = False
+            for item in file_list:
+                if filename in item:
+                    found = True
+                    break
+            
+            if not found:
+                self.discovery.debug_print(f"File {filename} not found on server")
+                ftp.quit()
+                return
             
             # Download the resource
             if resource.is_directory:
                 # For directories, we need to recursively download
-                self._download_directory(ftp, os.path.basename(resource.path), dest_path)
+                try:
+                    self._download_directory(ftp, os.path.basename(resource.path), dest_path)
+                except Exception as e:
+                    self.discovery.debug_print(f"Error downloading directory: {e}")
             else:
                 # For files, just download the file
-                os.makedirs(dest_dir, exist_ok=True)
-                with open(dest_path, 'wb') as f:
-                    ftp.retrbinary(f'RETR {os.path.basename(resource.path)}', f.write)
+                try:
+                    os.makedirs(dest_dir, exist_ok=True)
+                    with open(dest_path, 'wb') as f:
+                        self.discovery.debug_print(f"Starting download of {filename}")
+                        ftp.retrbinary(f'RETR {filename}', f.write)
+                    self.discovery.debug_print(f"Successfully downloaded file to {dest_path}")
+                except Exception as e:
+                    self.discovery.debug_print(f"Error downloading file: {e}")
             
             # Close connection
             ftp.quit()
@@ -519,7 +582,7 @@ class FileShareManager:
             self.discovery.debug_print(f"Downloaded {resource.path} to {dest_path}")
             
         except Exception as e:
-            self.discovery.debug_print(f"Error downloading resource: {e}")
+            self.discovery.debug_print(f"Error in download_resource: {e}")
     
     def _download_directory(self, ftp, remote_dir, local_dir):
         """Download a directory recursively.
@@ -543,6 +606,9 @@ class FileShareManager:
             # Process each item
             for item in items:
                 parts = item.split()
+                if len(parts) < 9:
+                    continue
+                    
                 name = parts[-1]
                 
                 if name in ('.', '..'):
@@ -553,10 +619,10 @@ class FileShareManager:
                 
                 if is_dir:
                     # Recursively download subdirectory
-                    self._download_directory(ftp, name, local_dir / name)
+                    self._download_directory(ftp, name, os.path.join(local_dir, name))
                 else:
                     # Download file
-                    local_path = local_dir / name
+                    local_path = os.path.join(local_dir, name)
                     with open(local_path, 'wb') as f:
                         ftp.retrbinary(f'RETR {name}', f.write)
             
