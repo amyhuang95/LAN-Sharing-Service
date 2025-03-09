@@ -197,13 +197,6 @@ class FileShareManager:
         self.ftp_handler.use_encoding = 'utf-8'
         # Force binary mode for all file transfers
         self.ftp_handler.use_binary = True
-        # Set the binary timeout to a higher value for larger files
-        self.ftp_handler.timeout = 300  # 5 minutes
-        # Increase buffer size for better performance
-        self.ftp_handler.ac_out_buffer_size = 32768
-        # Add debug logging for FTP
-        if self.config.debug_mode:
-            self.ftp_handler.log_prefix = "FTP: "
         
         # Add the user to the authorizer with full permissions to their share directory
         self.default_password = "anonymous"  # Simplified password for easier testing
@@ -713,8 +706,6 @@ class FileShareManager:
     #         except Exception as e:
     #             self.discovery.debug_print(f"Error checking orphaned resource {resource.path}: {e}")
     
-    # Replace the _download_resource method with this improved version
-
     def _download_resource(self, resource: SharedResource, host_ip: str) -> None:
         """Download a resource from a peer.
         
@@ -738,139 +729,107 @@ class FileShareManager:
                 
                 self.discovery.debug_print(f"Removed old version of {dest_path}")
             
-            # Ensure destination directory exists
-            os.makedirs(dest_dir, exist_ok=True)
-            
             # Create FTP connection
             ftp = ftplib.FTP()
-            # Increase timeout for large files
-            ftp.timeout = 60  # 60 seconds timeout
+            ftp.connect(host_ip, self.ftp_address[1])
             
-            try:
-                # Connect to FTP server
-                ftp.connect(host_ip, self.ftp_address[1])
-                self.discovery.debug_print(f"Connected to FTP server at {host_ip}:{self.ftp_address[1]}")
-                
-                # Try different login methods
-                login_successful = False
-                
-                # First, try using the provided password
-                if resource.ftp_password:
-                    try:
-                        ftp.login(resource.owner, resource.ftp_password)
-                        login_successful = True
-                        self.discovery.debug_print(f"Logged in with username and password")
-                    except Exception as e:
-                        self.discovery.debug_print(f"FTP login with owner credentials failed: {e}")
-                
-                # If that fails, try anonymous login
-                if not login_successful:
-                    try:
-                        ftp.login('anonymous', 'anonymous@')
-                        login_successful = True
-                        self.discovery.debug_print(f"Logged in anonymously")
-                    except Exception as e:
-                        self.discovery.debug_print(f"Anonymous FTP login failed: {e}")
-                
-                # If all login attempts failed, we can't proceed
-                if not login_successful:
-                    self.discovery.debug_print(f"All FTP login attempts failed - cannot download resource")
-                    return
-                
-                # CRITICAL: Explicitly set binary mode for file transfers
-                ftp.sendcmd('TYPE I')
-                self.discovery.debug_print("Set FTP transfer mode to binary (TYPE I)")
-                
-                # List files in current directory
-                file_list = []
-                ftp.dir(file_list.append)
-                self.discovery.debug_print(f"FTP directory listing: {file_list}")
-                
-                # Check if the resource exists on the server
-                filename = os.path.basename(resource.path)
-                
-                # Try to find the file in the directory listing
-                found = False
-                for item in file_list:
-                    if filename in item:
-                        found = True
-                        break
-                
-                if not found:
-                    self.discovery.debug_print(f"File {filename} not found on server")
-                    ftp.quit()
-                    return
-                
-                # Download the resource
-                if resource.is_directory:
-                    # For directories, we need to recursively download
-                    try:
-                        os.makedirs(dest_path, exist_ok=True)
-                        self._download_directory_recursive(ftp, filename, dest_path)
-                    except Exception as e:
-                        self.discovery.debug_print(f"Error downloading directory: {e}")
-                        raise
-                else:
-                    # For files, download directly to a temporary file first
-                    temp_file_path = f"{dest_path}.temp"
-                    try:
-                        self.discovery.debug_print(f"Starting download of {filename} to temporary file {temp_file_path}")
-                        
-                        # Create a buffer to accumulate data
-                        received_data = []
-                        
-                        def callback(data):
-                            received_data.append(data)
-                        
-                        # Download the file data into our buffer
-                        ftp.retrbinary(f'RETR {filename}', callback, blocksize=8192)
-                        
-                        # Write all the data to the file at once
-                        with open(temp_file_path, 'wb') as f:
-                            for chunk in received_data:
-                                f.write(chunk)
-                        
-                        # Check if the download was successful
-                        if os.path.getsize(temp_file_path) == 0:
-                            self.discovery.debug_print(f"Warning: Downloaded file is empty! Download failed.")
-                            if os.path.exists(temp_file_path):
-                                os.remove(temp_file_path)
-                            return
-                        
-                        # Rename temporary file to final destination
-                        if os.path.exists(dest_path):
-                            os.remove(dest_path)
-                        os.rename(temp_file_path, dest_path)
-                        
-                        self.discovery.debug_print(f"Successfully downloaded file to {dest_path} ({os.path.getsize(dest_path)} bytes)")
-                        
-                    except Exception as e:
-                        self.discovery.debug_print(f"Error downloading file: {e}")
-                        # Clean up temp file if it exists
-                        if os.path.exists(temp_file_path):
-                            os.remove(temp_file_path)
-                        raise
-                
-                # Mark as downloaded only if we get here without exceptions
-                self.downloaded_resources.add(resource.id)
-                self._save_resources()
-                
-                self.discovery.debug_print(f"Successfully completed download of {resource.path} to {dest_path}")
-                
-            finally:
-                # Ensure FTP connection is closed even if exceptions occur
+            # Set encoding for control channel only (not for file transfers)
+            ftp.encoding = 'utf-8'
+            
+            # Try different login methods
+            login_successful = False
+            
+            # First, try using the provided password
+            if resource.ftp_password:
                 try:
-                    ftp.quit()
-                except:
-                    pass
-                
+                    ftp.login(resource.owner, resource.ftp_password)
+                    login_successful = True
+                    self.discovery.debug_print(f"Logged in with username and password")
+                except Exception as e:
+                    self.discovery.debug_print(f"FTP login with owner credentials failed: {e}")
+            
+            # If that fails, try anonymous login
+            if not login_successful:
+                try:
+                    ftp.login('anonymous', 'anonymous@')
+                    login_successful = True
+                    self.discovery.debug_print(f"Logged in anonymously")
+                except Exception as e:
+                    self.discovery.debug_print(f"Anonymous FTP login failed: {e}")
+            
+            # If all login attempts failed, we can't proceed
+            if not login_successful:
+                self.discovery.debug_print(f"All FTP login attempts failed - cannot download resource")
+                return
+            
+            # Explicitly set binary mode for file transfers
+            ftp.sendcmd('TYPE I')
+            
+            # List files in current directory
+            file_list = []
+            ftp.dir(file_list.append)
+            self.discovery.debug_print(f"FTP directory listing: {file_list}")
+            
+            # Check if the resource exists on the server
+            filename = os.path.basename(resource.path)
+            
+            # Try to find the file in the directory listing
+            found = False
+            for item in file_list:
+                if filename in item:
+                    found = True
+                    break
+            
+            if not found:
+                self.discovery.debug_print(f"File {filename} not found on server")
+                ftp.quit()
+                return
+            
+            # Download the resource
+            if resource.is_directory:
+                # For directories, we need to recursively download
+                try:
+                    os.makedirs(dest_path, exist_ok=True)
+                    self._download_directory_recursive(ftp, filename, dest_path)
+                except Exception as e:
+                    self.discovery.debug_print(f"Error downloading directory: {e}")
+            else:
+                # For files, just download the file
+                try:
+                    os.makedirs(dest_dir, exist_ok=True)
+                    
+                    # Key fix: Explicitly open file in binary write mode
+                    with open(dest_path, 'wb') as f:
+                        self.discovery.debug_print(f"Starting download of {filename} in binary mode")
+                        
+                        # Use a callback function to monitor download progress and ensure data is written
+                        def callback(data):
+                            f.write(data)
+                            f.flush()  # Ensure data is written to disk
+                        
+                        # Use larger block size for better performance
+                        ftp.retrbinary(f'RETR {filename}', callback, blocksize=32768)
+                    
+                    # Verify file was downloaded successfully
+                    if os.path.getsize(dest_path) == 0:
+                        self.discovery.debug_print(f"Warning: Downloaded file {dest_path} is empty!")
+                    else:
+                        self.discovery.debug_print(f"Successfully downloaded file to {dest_path} ({os.path.getsize(dest_path)} bytes)")
+                except Exception as e:
+                    self.discovery.debug_print(f"Error downloading file: {e}")
+            
+            # Close connection
+            ftp.quit()
+            
+            # Mark as downloaded
+            self.downloaded_resources.add(resource.id)
+            self._save_resources()
+            
+            self.discovery.debug_print(f"Downloaded {resource.path} to {dest_path}")
+            
         except Exception as e:
             self.discovery.debug_print(f"Error in download_resource: {e}")
-            # Make sure the resource is not marked as downloaded if an error occurred
-            if resource.id in self.downloaded_resources:
-                self.downloaded_resources.remove(resource.id)
-                self._save_resources()
-                
+    
     def _download_directory_recursive(self, ftp, remote_dir, local_dir):
         """Download a directory recursively.
         
@@ -925,46 +884,23 @@ class FileShareManager:
                         self.discovery.debug_print(f"Found subdirectory: {name}")
                         self._download_directory_recursive(ftp, name, local_item_path)
                     else:
-                        # Download file in binary mode with optimal handling
+                        # Download file in binary mode with larger block size
                         self.discovery.debug_print(f"Downloading file: {name} to {local_item_path}")
                         
-                        # Download to a temporary file first
-                        temp_file_path = f"{local_item_path}.temp"
-                        
-                        try:
-                            # Create a buffer to accumulate data
-                            received_data = []
-                            
+                        # Open in binary mode and use callback for reliable writing
+                        with open(local_item_path, 'wb') as f:
                             def callback(data):
-                                received_data.append(data)
-                            
-                            # Download the file data into our buffer
-                            ftp.retrbinary(f'RETR {name}', callback, blocksize=8192)
-                            
-                            # Write all the data to the file at once
-                            with open(temp_file_path, 'wb') as f:
-                                for chunk in received_data:
-                                    f.write(chunk)
-                            
-                            # Check if the download was successful
-                            if os.path.getsize(temp_file_path) == 0:
-                                self.discovery.debug_print(f"Warning: Downloaded file {name} is empty! Download failed.")
-                                if os.path.exists(temp_file_path):
-                                    os.remove(temp_file_path)
-                                continue
-                            
-                            # Rename temporary file to final destination
-                            if os.path.exists(local_item_path):
-                                os.remove(local_item_path)
-                            os.rename(temp_file_path, local_item_path)
-                            
+                                f.write(data)
+                                f.flush()  # Ensure data is written to disk
+                                
+                            # Use larger block size for better performance
+                            ftp.retrbinary(f'RETR {name}', callback, blocksize=32768)
+                        
+                        # Verify file was downloaded successfully
+                        if os.path.getsize(local_item_path) == 0:
+                            self.discovery.debug_print(f"Warning: Downloaded file {local_item_path} is empty!")
+                        else:
                             self.discovery.debug_print(f"Successfully downloaded file {name} ({os.path.getsize(local_item_path)} bytes)")
-                            
-                        except Exception as e:
-                            self.discovery.debug_print(f"Error downloading file {name}: {e}")
-                            # Clean up temp file if it exists
-                            if os.path.exists(temp_file_path):
-                                os.remove(temp_file_path)
                 
                 # Return to original directory
                 ftp.cwd(original_dir)
@@ -977,11 +913,10 @@ class FileShareManager:
                 except:
                     pass
                 raise
-                    
+                
         except Exception as e:
             self.discovery.debug_print(f"Error downloading directory {remote_dir}: {e}")
-            
-            
+    
     def _handle_access_update(self, data: Dict, addr: tuple, add: bool) -> None:
         """Handle an access update.
         
