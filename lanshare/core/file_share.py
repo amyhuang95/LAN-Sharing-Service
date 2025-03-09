@@ -197,6 +197,13 @@ class FileShareManager:
         self.ftp_handler.use_encoding = 'utf-8'
         # Force binary mode for all file transfers
         self.ftp_handler.use_binary = True
+        # Set the binary timeout to a higher value for larger files
+        self.ftp_handler.timeout = 300  # 5 minutes
+        # Increase buffer size for better performance
+        self.ftp_handler.ac_out_buffer_size = 32768
+        # Add debug logging for FTP
+        if self.config.debug_mode:
+            self.ftp_handler.log_prefix = "FTP: "
         
         # Add the user to the authorizer with full permissions to their share directory
         self.default_password = "anonymous"  # Simplified password for easier testing
@@ -706,6 +713,8 @@ class FileShareManager:
     #         except Exception as e:
     #             self.discovery.debug_print(f"Error checking orphaned resource {resource.path}: {e}")
     
+    # Replace the _download_resource method with this improved version
+
     def _download_resource(self, resource: SharedResource, host_ip: str) -> None:
         """Download a resource from a peer.
         
@@ -733,7 +742,7 @@ class FileShareManager:
             ftp = ftplib.FTP()
             ftp.connect(host_ip, self.ftp_address[1])
             
-            # Set encoding for control channel
+            # Set encoding for control channel only (not for file transfers)
             ftp.encoding = 'utf-8'
             
             # Try different login methods
@@ -762,7 +771,7 @@ class FileShareManager:
                 self.discovery.debug_print(f"All FTP login attempts failed - cannot download resource")
                 return
             
-            # Always set binary mode for all file transfers
+            # Explicitly set binary mode for file transfers
             ftp.sendcmd('TYPE I')
             
             # List files in current directory
@@ -797,10 +806,24 @@ class FileShareManager:
                 # For files, just download the file
                 try:
                     os.makedirs(dest_dir, exist_ok=True)
+                    
+                    # Key fix: Explicitly open file in binary write mode
                     with open(dest_path, 'wb') as f:
-                        self.discovery.debug_print(f"Starting download of {filename}")
-                        ftp.retrbinary(f'RETR {filename}', f.write, blocksize=8192)
-                    self.discovery.debug_print(f"Successfully downloaded file to {dest_path}")
+                        self.discovery.debug_print(f"Starting download of {filename} in binary mode")
+                        
+                        # Use a callback function to monitor download progress and ensure data is written
+                        def callback(data):
+                            f.write(data)
+                            f.flush()  # Ensure data is written to disk
+                        
+                        # Use larger block size for better performance
+                        ftp.retrbinary(f'RETR {filename}', callback, blocksize=32768)
+                    
+                    # Verify file was downloaded successfully
+                    if os.path.getsize(dest_path) == 0:
+                        self.discovery.debug_print(f"Warning: Downloaded file {dest_path} is empty!")
+                    else:
+                        self.discovery.debug_print(f"Successfully downloaded file to {dest_path} ({os.path.getsize(dest_path)} bytes)")
                 except Exception as e:
                     self.discovery.debug_print(f"Error downloading file: {e}")
             
@@ -818,8 +841,6 @@ class FileShareManager:
     
     def _download_directory_recursive(self, ftp, remote_dir, local_dir):
         """Download a directory recursively.
-        
-        This improved version handles directory structure better.
         
         Args:
             ftp: FTP connection.
@@ -874,8 +895,21 @@ class FileShareManager:
                     else:
                         # Download file in binary mode with larger block size
                         self.discovery.debug_print(f"Downloading file: {name} to {local_item_path}")
+                        
+                        # Open in binary mode and use callback for reliable writing
                         with open(local_item_path, 'wb') as f:
-                            ftp.retrbinary(f'RETR {name}', f.write, blocksize=8192)
+                            def callback(data):
+                                f.write(data)
+                                f.flush()  # Ensure data is written to disk
+                                
+                            # Use larger block size for better performance
+                            ftp.retrbinary(f'RETR {name}', callback, blocksize=32768)
+                        
+                        # Verify file was downloaded successfully
+                        if os.path.getsize(local_item_path) == 0:
+                            self.discovery.debug_print(f"Warning: Downloaded file {local_item_path} is empty!")
+                        else:
+                            self.discovery.debug_print(f"Successfully downloaded file {name} ({os.path.getsize(local_item_path)} bytes)")
                 
                 # Return to original directory
                 ftp.cwd(original_dir)
