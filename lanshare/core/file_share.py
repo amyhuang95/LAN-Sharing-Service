@@ -798,25 +798,37 @@ class FileShareManager:
                 try:
                     os.makedirs(dest_dir, exist_ok=True)
                     
-                    # Key fix: Explicitly open file in binary write mode
-                    with open(dest_path, 'wb') as f:
+                    # KEY FIX: Use a temporary file to handle partial downloads
+                    temp_path = str(dest_path) + ".tmp"
+                    
+                    # Open file in binary write mode
+                    with open(temp_path, 'wb') as f:
                         self.discovery.debug_print(f"Starting download of {filename} in binary mode")
                         
-                        # Use a callback function to monitor download progress and ensure data is written
-                        def callback(data):
+                        # Ensure buffer is flushed after each write
+                        def write_callback(data):
                             f.write(data)
-                            f.flush()  # Ensure data is written to disk
                         
-                        # Use larger block size for better performance
-                        ftp.retrbinary(f'RETR {filename}', callback, blocksize=32768)
+                        # Use RETR command with binary mode and properly handle the callback
+                        ftp.retrbinary(f'RETR {filename}', write_callback, blocksize=8192)
+                    
+                    # After successful download, rename the temp file to final name
+                    os.replace(temp_path, dest_path)
                     
                     # Verify file was downloaded successfully
-                    if os.path.getsize(dest_path) == 0:
+                    file_size = os.path.getsize(dest_path)
+                    if file_size == 0:
                         self.discovery.debug_print(f"Warning: Downloaded file {dest_path} is empty!")
                     else:
-                        self.discovery.debug_print(f"Successfully downloaded file to {dest_path} ({os.path.getsize(dest_path)} bytes)")
+                        self.discovery.debug_print(f"Successfully downloaded file to {dest_path} ({file_size} bytes)")
                 except Exception as e:
                     self.discovery.debug_print(f"Error downloading file: {e}")
+                    # Clean up temp file if it exists
+                    if os.path.exists(temp_path):
+                        try:
+                            os.remove(temp_path)
+                        except:
+                            pass
             
             # Close connection
             ftp.quit()
@@ -829,7 +841,7 @@ class FileShareManager:
             
         except Exception as e:
             self.discovery.debug_print(f"Error in download_resource: {e}")
-    
+
     def _download_directory_recursive(self, ftp, remote_dir, local_dir):
         """Download a directory recursively.
         
@@ -884,23 +896,37 @@ class FileShareManager:
                         self.discovery.debug_print(f"Found subdirectory: {name}")
                         self._download_directory_recursive(ftp, name, local_item_path)
                     else:
-                        # Download file in binary mode with larger block size
+                        # Download file in binary mode
                         self.discovery.debug_print(f"Downloading file: {name} to {local_item_path}")
                         
-                        # Open in binary mode and use callback for reliable writing
-                        with open(local_item_path, 'wb') as f:
-                            def callback(data):
-                                f.write(data)
-                                f.flush()  # Ensure data is written to disk
-                                
-                            # Use larger block size for better performance
-                            ftp.retrbinary(f'RETR {name}', callback, blocksize=32768)
+                        # KEY FIX: Use temporary file
+                        temp_path = local_item_path + ".tmp"
                         
-                        # Verify file was downloaded successfully
-                        if os.path.getsize(local_item_path) == 0:
-                            self.discovery.debug_print(f"Warning: Downloaded file {local_item_path} is empty!")
-                        else:
-                            self.discovery.debug_print(f"Successfully downloaded file {name} ({os.path.getsize(local_item_path)} bytes)")
+                        try:
+                            # Open in binary mode
+                            with open(temp_path, 'wb') as f:
+                                def write_callback(data):
+                                    f.write(data)
+                                
+                                # Download file content
+                                ftp.retrbinary(f'RETR {name}', write_callback, blocksize=8192)
+                            
+                            # After successful download, rename to final filename
+                            os.replace(temp_path, local_item_path)
+                            
+                            file_size = os.path.getsize(local_item_path)
+                            if file_size == 0:
+                                self.discovery.debug_print(f"Warning: Downloaded file {local_item_path} is empty!")
+                            else:
+                                self.discovery.debug_print(f"Successfully downloaded {name} ({file_size} bytes)")
+                        except Exception as e:
+                            self.discovery.debug_print(f"Error downloading file {name}: {e}")
+                            # Clean up temp file if it exists
+                            if os.path.exists(temp_path):
+                                try:
+                                    os.remove(temp_path)
+                                except:
+                                    pass
                 
                 # Return to original directory
                 ftp.cwd(original_dir)
