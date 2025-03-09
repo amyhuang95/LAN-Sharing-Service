@@ -65,10 +65,19 @@ class UDPPeerDiscovery(PeerDiscovery):
         self.file_share_manager.start()
 
     def stop(self) -> None:
-        """Stop all services."""
-        self.running = False
-        self.file_share_manager.stop()
-        self.udp_socket.close()
+        """Stop all services and announce disconnection."""
+        if self.running:
+            try:
+                # Announce disconnection before stopping
+                self.announce_disconnection()
+                # Give a moment for the message to be sent
+                time.sleep(0.5)  
+            except Exception as e:
+                self.debug_print(f"Error during disconnection: {e}")
+            
+            self.running = False
+            self.file_share_manager.stop()
+            self.udp_socket.close()
 
     def _start_threads(self) -> None:
         """Start the broadcast and listener threads."""
@@ -111,8 +120,28 @@ class UDPPeerDiscovery(PeerDiscovery):
                 self.debug_print(f"Error details: {str(e)}")
             time.sleep(self.config.broadcast_interval)
 
+    def announce_disconnection(self) -> None:
+        """
+        Broadcasts a disconnection announcement to all peers.
+        This should be called before the application exits.
+        """
+        try:
+            packet = {
+                'type': 'disconnection',
+                'username': self.username,
+                'timestamp': datetime.now().isoformat()
+            }
+            # Broadcast disconnection announcement
+            self.udp_socket.sendto(
+                json.dumps(packet).encode(),
+                ('<broadcast>', self.config.port)
+            )
+            self.debug_print(f"Broadcast disconnection announcement for {self.username}")
+        except Exception as e:
+            self.debug_print(f"Error announcing disconnection: {e}")
+
     def _listen_for_packets(self) -> None:
-        """Listen for both broadcasts and direct messages."""
+        """Listen for broadcasts, direct messages, and disconnection announcements."""
         self.debug_print(f"Started listening for packets on port {self.config.port}")
         while self.running:
             try:
@@ -121,13 +150,15 @@ class UDPPeerDiscovery(PeerDiscovery):
                 packet = json.loads(raw_packet.decode())
                 self.debug_print(f"Decoded packet type: {packet['type']}")
 
-                # Check whether the packet is a broadcast announcement, a message, or a file share packet
+                # Check packet type
                 if packet['type'] == 'announcement':
                     self._handle_announcement(packet, addr)
                 elif packet['type'] == 'message':
                     self._handle_message(packet)
                 elif packet['type'] == 'file_share':
                     self.file_share_manager.handle_file_share_packet(packet, addr)
+                elif packet['type'] == 'disconnection':
+                    self._handle_disconnection(packet)
                 
             except Exception as e:
                 if self.running:
@@ -152,7 +183,7 @@ class UDPPeerDiscovery(PeerDiscovery):
                 address=addr[0],
                 last_seen=now,
                 first_seen=now if is_new_peer else 
-                        self.peers[packet['username']].first_seen # use current time for newly connected peer, keep the old value for already connected peer
+                          self.peers[packet['username']].first_seen # use current time for newly connected peer, keep the old value for already connected peer
             )
             self.debug_print(f"Updated peer: {packet['username']} at {addr[0]}")
             
@@ -161,8 +192,8 @@ class UDPPeerDiscovery(PeerDiscovery):
                 self.debug_print(f"New peer detected: {packet['username']} - announcing shared resources")
                 # Get all resources shared by this user
                 own_resources = [r for r in self.file_share_manager.shared_resources.values() 
-                            if r.owner == self.username and 
-                                (r.shared_to_all or packet['username'] in r.allowed_users)]
+                               if r.owner == self.username and 
+                                 (r.shared_to_all or packet['username'] in r.allowed_users)]
                 
                 # Announce each resource that this peer can access
                 for resource in own_resources:
@@ -182,6 +213,62 @@ class UDPPeerDiscovery(PeerDiscovery):
                         self.debug_print(f"Announced resource {resource.id} to new peer {packet['username']}")
                     except Exception as e:
                         self.debug_print(f"Error announcing resource to new peer: {e}")
+
+    def _handle_disconnection(self, packet: Dict) -> None:
+        """
+        Handles disconnection announcement from a peer.
+        
+        Args:
+            packet: Dict containing the disconnection announcement
+        """
+        username = packet.get('username')
+        
+        if username and username != self.username and username in self.peers:
+            self.debug_print(f"Peer disconnected: {username}")
+            
+            # Remove from peers list
+            if username in self.peers:
+                del self.peers[username]
+            
+            # Clean up their shared resources
+            self._cleanup_disconnected_peer_resources(username)
+
+    def _cleanup_disconnected_peer_resources(self, username: str) -> None:
+        """
+        Removes all shared resources from a disconnected peer.
+        
+        Args:
+            username: The username of the disconnected peer
+        """
+        try:
+            # Find all resources shared by the disconnected user
+            resources_to_remove = []
+            for resource_id, resource in self.file_share_manager.received_resources.items():
+                if resource.owner == username:
+                    resources_to_remove.append(resource)
+            
+            # Remove each resource
+            for resource in resources_to_remove:
+                self.debug_print(f"Removing resource {resource.id} from disconnected peer {username}")
+                
+                # Remove the file/directory
+                self.file_share_manager._remove_shared_resource(resource)
+                
+                # Remove from downloaded resources
+                if resource.id in self.file_share_manager.downloaded_resources:
+                    self.file_share_manager.downloaded_resources.remove(resource.id)
+                
+                # Remove from received resources
+                if resource.id in self.file_share_manager.received_resources:
+                    del self.file_share_manager.received_resources[resource.id]
+            
+            # Save the updated resources state
+            if resources_to_remove:
+                self.file_share_manager._save_resources()
+                self.debug_print(f"Removed {len(resources_to_remove)} resources from disconnected peer {username}")
+        
+        except Exception as e:
+            self.debug_print(f"Error cleaning up resources for disconnected peer {username}: {e}")
 
     def _handle_message(self, packet: Dict):
         """Processes incoming messages received from other peers.
