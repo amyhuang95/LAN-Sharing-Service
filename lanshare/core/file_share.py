@@ -411,13 +411,13 @@ class FileShareManager:
         try:
             path = os.path.abspath(path)
             if not os.path.exists(path):
-                self.discovery.debug_print(f"Path does not exist: {path}")
+                self.debug_log(f"Path does not exist: {path}")
                 return None
             
             # Check if already shared
             existing_resource = self._find_existing_shared_resource(path)
             if existing_resource:
-                self.discovery.debug_print(f"Resource already shared with ID: {existing_resource.id}")
+                self.debug_log(f"Resource already shared with ID: {existing_resource.id}")
                 return existing_resource
                 
             is_directory = os.path.isdir(path)
@@ -444,24 +444,14 @@ class FileShareManager:
                 target_path = self.user_share_dir / resource_name
                 counter += 1
             
-            # On Windows, we can't easily use symlinks, so we'll copy the file/dir
-            if os.name == 'nt':
-                if is_directory:
-                    shutil.copytree(path, target_path)
-                else:
-                    shutil.copy2(path, target_path)
+            # ALWAYS copy the file/directory instead of using symlinks
+            # This ensures FTP access will work properly
+            if is_directory:
+                self._recursive_copy(path, target_path)
+                self.debug_log(f"Copied directory {path} to {target_path}")
             else:
-                if is_directory:
-                    # For directories, use a copy instead of a symlink for better compatibility
-                    self._recursive_copy(path, target_path)
-                else:
-                    # For files, a symlink is fine
-                    try:
-                        os.symlink(path, target_path)
-                    except Exception as e:
-                        # If symlink fails, fall back to copying
-                        self.discovery.debug_print(f"Symlink failed, falling back to copy: {e}")
-                        shutil.copy2(path, target_path)
+                shutil.copy2(path, target_path)
+                self.debug_log(f"Copied file {path} to {target_path}")
             
             # Add to shared resources
             self.shared_resources[resource.id] = resource
@@ -470,11 +460,13 @@ class FileShareManager:
             # Announce to peers
             self._announce_resource(resource)
             
-            self.discovery.debug_print(f"Shared {'directory' if is_directory else 'file'}: {path}")
+            self.debug_log(f"Shared {'directory' if is_directory else 'file'}: {path}")
             return resource
             
         except Exception as e:
-            self.discovery.debug_print(f"Error sharing resource: {e}")
+            self.debug_log(f"Error sharing resource: {e}")
+            import traceback
+            self.debug_log(f"Traceback: {traceback.format_exc()}")
             return None
     
     def _recursive_copy(self, src_path, dest_path):
