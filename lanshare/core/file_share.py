@@ -212,7 +212,7 @@ class FileShareManager:
         self.ftp_address = ('0.0.0.0', self.config.port + 1)  # Use next port after discovery port
         
         # File sync settings
-        self.sync_interval = 30  # Check for updates every 30 seconds
+        self.sync_interval = 5  # Check for updates every 5 seconds
         self.sync_thread = None
         self.sync_running = False
         
