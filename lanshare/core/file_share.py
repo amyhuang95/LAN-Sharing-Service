@@ -19,7 +19,7 @@ from .types import Peer
 import logging
 
 # Configure logging to write to a file
-log_file = Path.home() / 'shared' / 'debug.txt'
+log_file = Path.home() / 'shared' / 'file_transfer_log.txt'
 logging.basicConfig(
     filename=str(log_file),
     level=logging.DEBUG,
@@ -246,8 +246,6 @@ class FileShareManager:
             message: The message to log.
         """
         logger.debug(message)
-        # Also print to console for immediate feedback
-        print(f"DEBUG: {message}")
     
     def _generate_password(self) -> str:
         """Generate a random password for FTP access.
