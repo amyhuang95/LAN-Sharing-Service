@@ -736,8 +736,8 @@ class FileShareManager:
             ftp = ftplib.FTP()
             ftp.connect(host_ip, self.ftp_address[1])
             
-            # Disable encoding for binary transfers
-            ftp.encoding = None
+            # Keep encoding as UTF-8 for command channel
+            ftp.encoding = 'utf-8'  # Changed from None to 'utf-8'
             
             # Try different login methods
             login_successful = False
@@ -810,7 +810,6 @@ class FileShareManager:
                             f.write(data)
                         
                         # Use binary transfer mode with optimized block size
-                        # Try a smaller block size which might help with reliability
                         self.debug_log(f"Using RETR command with block size 8192")
                         ftp.retrbinary(f'RETR {filename}', callback, blocksize=8192)
                     
@@ -967,7 +966,7 @@ class FileShareManager:
             # Log the full exception traceback for better debugging
             import traceback
             self.debug_log(f"Traceback: {traceback.format_exc()}")
-    
+            
     def _handle_access_update(self, data: Dict, addr: tuple, add: bool) -> None:
         """Handle an access update.
         
