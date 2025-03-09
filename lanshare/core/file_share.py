@@ -6,6 +6,7 @@ import threading
 from pathlib import Path
 import json
 import socket
+import ftplib
 from typing import Dict, List, Optional, Set
 import time
 from datetime import datetime
@@ -47,7 +48,7 @@ class SharedResource:
         self.owner = owner
         self.path = path
         self.is_directory = is_directory
-        self.allowed_users: Set[str] = set()
+        self.allowed_users = set()
         self.shared_to_all = shared_to_all
         self.timestamp = datetime.now()
     
@@ -127,6 +128,7 @@ class FileShareManager:
     2. Managing access permissions
     3. Running an FTP server for file transfers
     4. Announcing shared resources to peers
+    5. Downloading shared resources automatically
     """
     
     def __init__(self, username: str, discovery_service):
@@ -152,15 +154,19 @@ class FileShareManager:
         self.shared_resources: Dict[str, SharedResource] = {}
         self.received_resources: Dict[str, SharedResource] = {}
         
+        # Download history to avoid downloading the same file multiple times
+        self.downloaded_resources: Set[str] = set()
+        
         # FTP server settings
         self.authorizer = DummyAuthorizer()
         self.ftp_handler = FTPHandler
         self.ftp_handler.authorizer = self.authorizer
         
         # Add the user to the authorizer with full permissions to their share directory
+        self.default_password = self._generate_password()
         self.authorizer.add_user(
             username, 
-            password=self._generate_password(), 
+            password=self.default_password, 
             homedir=str(self.user_share_dir),
             perm='elradfmwMT'  # Full permissions
         )
@@ -199,6 +205,8 @@ class FileShareManager:
                     for resource_data in data.get('received', []):
                         resource = SharedResource.from_dict(resource_data)
                         self.received_resources[resource.id] = resource
+                    
+                    self.downloaded_resources = set(data.get('downloaded', []))
             except Exception as e:
                 self.discovery.debug_print(f"Error loading shared resources: {e}")
     
@@ -208,7 +216,8 @@ class FileShareManager:
         try:
             data = {
                 'shared': [r.to_dict() for r in self.shared_resources.values()],
-                'received': [r.to_dict() for r in self.received_resources.values()]
+                'received': [r.to_dict() for r in self.received_resources.values()],
+                'downloaded': list(self.downloaded_resources)
             }
             with open(resource_file, 'w') as f:
                 json.dump(data, f, indent=2)
@@ -451,15 +460,15 @@ class FileShareManager:
                 owner_dir = self.share_dir / resource.owner
                 owner_dir.mkdir(exist_ok=True)
                 
-                # Update the FTP authorizer
-                if resource.owner not in [u.username for u in self.authorizer.user_table]:
-                    # Add the owner as a user with read-only access
-                    self.authorizer.add_user(
-                        resource.owner,
-                        password=self._generate_password(),
-                        homedir=str(owner_dir),
-                        perm='elr'  # Read-only permissions
+                # Check if this resource needs to be downloaded
+                if resource.id not in self.downloaded_resources:
+                    # Download the resource in a separate thread
+                    download_thread = threading.Thread(
+                        target=self._download_resource,
+                        args=(resource, addr[0])
                     )
+                    download_thread.daemon = True
+                    download_thread.start()
                 
                 self.discovery.debug_print(
                     f"Received shared {'directory' if resource.is_directory else 'file'} from {resource.owner}: {os.path.basename(resource.path)}"
@@ -467,6 +476,95 @@ class FileShareManager:
             
         except Exception as e:
             self.discovery.debug_print(f"Error handling resource announcement: {e}")
+    
+    def _download_resource(self, resource: SharedResource, host_ip: str) -> None:
+        """Download a resource from a peer.
+        
+        Args:
+            resource: The resource to download.
+            host_ip: The IP address of the host.
+        """
+        try:
+            self.discovery.debug_print(f"Downloading {resource.path} from {host_ip}...")
+            
+            # Create destination path
+            dest_dir = self.share_dir / resource.owner
+            dest_path = dest_dir / os.path.basename(resource.path)
+            
+            # Create FTP connection
+            ftp = ftplib.FTP()
+            ftp.connect(host_ip, self.ftp_address[1])
+            
+            # Login - we use the owner's username and a default password
+            # In a real implementation, we would use a secure authentication method
+            ftp.login(resource.owner, 'anonymous')
+            
+            # Download the resource
+            if resource.is_directory:
+                # For directories, we need to recursively download
+                self._download_directory(ftp, os.path.basename(resource.path), dest_path)
+            else:
+                # For files, just download the file
+                os.makedirs(dest_dir, exist_ok=True)
+                with open(dest_path, 'wb') as f:
+                    ftp.retrbinary(f'RETR {os.path.basename(resource.path)}', f.write)
+            
+            # Close connection
+            ftp.quit()
+            
+            # Mark as downloaded
+            self.downloaded_resources.add(resource.id)
+            self._save_resources()
+            
+            self.discovery.debug_print(f"Downloaded {resource.path} to {dest_path}")
+            
+        except Exception as e:
+            self.discovery.debug_print(f"Error downloading resource: {e}")
+    
+    def _download_directory(self, ftp, remote_dir, local_dir):
+        """Download a directory recursively.
+        
+        Args:
+            ftp: FTP connection.
+            remote_dir: Remote directory name.
+            local_dir: Local directory path.
+        """
+        try:
+            # Create local directory
+            os.makedirs(local_dir, exist_ok=True)
+            
+            # Change to remote directory
+            ftp.cwd(remote_dir)
+            
+            # Get directory listing
+            items = []
+            ftp.dir(items.append)
+            
+            # Process each item
+            for item in items:
+                parts = item.split()
+                name = parts[-1]
+                
+                if name in ('.', '..'):
+                    continue
+                
+                # Check if it's a directory
+                is_dir = item.startswith('d')
+                
+                if is_dir:
+                    # Recursively download subdirectory
+                    self._download_directory(ftp, name, local_dir / name)
+                else:
+                    # Download file
+                    local_path = local_dir / name
+                    with open(local_path, 'wb') as f:
+                        ftp.retrbinary(f'RETR {name}', f.write)
+            
+            # Return to parent directory
+            ftp.cwd('..')
+            
+        except Exception as e:
+            self.discovery.debug_print(f"Error downloading directory: {e}")
     
     def _handle_access_update(self, data: Dict, addr: tuple, add: bool) -> None:
         """Handle an access update.
@@ -490,6 +588,16 @@ class FileShareManager:
                     
                     if add:
                         resource.add_user(username)
+                        # Download the resource if we're being granted access
+                        if resource.owner != self.username and resource_id not in self.downloaded_resources:
+                            peer = self.discovery.peers.get(resource.owner)
+                            if peer:
+                                download_thread = threading.Thread(
+                                    target=self._download_resource,
+                                    args=(resource, peer.address)
+                                )
+                                download_thread.daemon = True
+                                download_thread.start()
                     else:
                         resource.remove_user(username)
                     
@@ -537,36 +645,3 @@ class FileShareManager:
             return self.received_resources[resource_id]
         
         return None
-    
-    def get_downloadable_resources(self) -> List[SharedResource]:
-        """Get resources that this user can download.
-        
-        Returns:
-            List of SharedResource instances.
-        """
-        return [r for r in self.received_resources.values() 
-                if r.can_access(self.username)]
-    
-    def get_ftp_credentials(self, resource: SharedResource) -> Optional[Dict]:
-        """Get FTP credentials for a resource.
-        
-        Args:
-            resource: The resource to get credentials for.
-            
-        Returns:
-            Dictionary with FTP credentials if available, None otherwise.
-        """
-        if not resource.can_access(self.username):
-            return None
-        
-        # Find the peer
-        peer = self.discovery.peers.get(resource.owner)
-        if not peer:
-            return None
-        
-        return {
-            'host': peer.address,
-            'port': self.config.port + 1,
-            'username': resource.owner,
-            'path': os.path.basename(resource.path)
-        }
