@@ -3,12 +3,12 @@
 import os
 import shutil
 import threading
+import time
 from pathlib import Path
 import json
 import socket
 import ftplib
 from typing import Dict, List, Optional, Set
-import time
 from datetime import datetime
 
 from pyftpdlib.authorizers import DummyAuthorizer
@@ -30,6 +30,7 @@ class SharedResource:
         shared_to_all: Whether the resource is shared to everyone.
         timestamp: When the resource was shared.
         ftp_password: Password for FTP access.
+        modified_time: Last modification time of the original file/directory.
     """
     
     def __init__(self, 
@@ -55,6 +56,12 @@ class SharedResource:
         self.shared_to_all = shared_to_all
         self.timestamp = datetime.now()
         self.ftp_password = ftp_password
+        
+        # Get the modification time of the original file/directory
+        try:
+            self.modified_time = os.path.getmtime(path)
+        except Exception:
+            self.modified_time = time.time()
     
     def to_dict(self) -> Dict:
         """Convert to dictionary representation.
@@ -70,7 +77,8 @@ class SharedResource:
             'allowed_users': list(self.allowed_users),
             'shared_to_all': self.shared_to_all,
             'timestamp': self.timestamp.isoformat(),
-            'ftp_password': self.ftp_password
+            'ftp_password': self.ftp_password,
+            'modified_time': self.modified_time
         }
     
     @classmethod
@@ -93,6 +101,7 @@ class SharedResource:
         resource.id = data['id']
         resource.allowed_users = set(data['allowed_users'])
         resource.timestamp = datetime.fromisoformat(data['timestamp'])
+        resource.modified_time = data.get('modified_time', time.time())
         return resource
     
     def add_user(self, username: str) -> None:
@@ -124,6 +133,20 @@ class SharedResource:
         return (self.owner == username or 
                 username in self.allowed_users or 
                 self.shared_to_all)
+    
+    def update_modified_time(self, new_time: float) -> bool:
+        """Update the resource's modification time.
+        
+        Args:
+            new_time: New modification time.
+            
+        Returns:
+            True if the time was updated, False if it's the same.
+        """
+        if new_time != self.modified_time:
+            self.modified_time = new_time
+            return True
+        return False
 
 
 class FileShareManager:
@@ -135,6 +158,7 @@ class FileShareManager:
     3. Running an FTP server for file transfers
     4. Announcing shared resources to peers
     5. Downloading shared resources automatically
+    6. Synchronizing file updates based on timestamps
     """
     
     def __init__(self, username: str, discovery_service):
@@ -186,6 +210,11 @@ class FileShareManager:
         # Set up FTP server
         self.ftp_server = None
         self.ftp_address = ('0.0.0.0', self.config.port + 1)  # Use next port after discovery port
+        
+        # File sync settings
+        self.sync_interval = 30  # Check for updates every 30 seconds
+        self.sync_thread = None
+        self.sync_running = False
         
         # Server thread
         self.server_thread = None
@@ -246,6 +275,12 @@ class FileShareManager:
                 self.server_thread.daemon = True
                 self.server_thread.start()
                 
+                # Start file synchronization thread
+                self.sync_running = True
+                self.sync_thread = threading.Thread(target=self._file_sync_loop)
+                self.sync_thread.daemon = True
+                self.sync_thread.start()
+                
                 self.running = True
                 self.discovery.debug_print(f"File sharing server started on port {self.ftp_address[1]}")
                 
@@ -261,11 +296,81 @@ class FileShareManager:
         if self.running:
             try:
                 self.running = False
+                self.sync_running = False
                 if self.ftp_server:
                     self.ftp_server.close_all()
                 self._save_resources()
             except Exception as e:
                 self.discovery.debug_print(f"Error stopping file sharing server: {e}")
+    
+    def _file_sync_loop(self) -> None:
+        """Periodically check for file updates and synchronize them."""
+        while self.sync_running:
+            try:
+                self._check_for_file_updates()
+            except Exception as e:
+                self.discovery.debug_print(f"Error in file sync loop: {e}")
+            
+            # Sleep for the sync interval
+            time.sleep(self.sync_interval)
+    
+    def _check_for_file_updates(self) -> None:
+        """Check if any shared files have been modified and update them."""
+        for resource_id, resource in list(self.shared_resources.items()):
+            try:
+                # Check if the original file still exists
+                if not os.path.exists(resource.path):
+                    self.discovery.debug_print(f"Original file no longer exists: {resource.path}")
+                    continue
+                
+                # Get the current modification time
+                current_mod_time = os.path.getmtime(resource.path)
+                
+                # Check if the file has been modified
+                if current_mod_time > resource.modified_time:
+                    self.discovery.debug_print(f"File updated: {resource.path}")
+                    
+                    # Update the modification time
+                    resource.update_modified_time(current_mod_time)
+                    
+                    # Re-copy the file to the shared directory
+                    self._update_shared_copy(resource)
+                    
+                    # Save the updated resource info
+                    self._save_resources()
+                    
+                    # Announce the update to peers
+                    self._announce_resource(resource)
+                    
+            except Exception as e:
+                self.discovery.debug_print(f"Error checking for updates on {resource.path}: {e}")
+    
+    def _update_shared_copy(self, resource: SharedResource) -> None:
+        """Update the shared copy of a file that has been modified.
+        
+        Args:
+            resource: The shared resource to update.
+        """
+        try:
+            # Get the filename
+            filename = os.path.basename(resource.path)
+            
+            # Path in the shared directory
+            share_path = self.user_share_dir / filename
+            
+            if resource.is_directory:
+                # If it's a directory, remove the old one and re-copy
+                if share_path.exists():
+                    shutil.rmtree(share_path)
+                self._recursive_copy(resource.path, share_path)
+            else:
+                # For files, just overwrite
+                shutil.copy2(resource.path, share_path)
+                
+            self.discovery.debug_print(f"Updated shared copy of {resource.path}")
+            
+        except Exception as e:
+            self.discovery.debug_print(f"Error updating shared copy: {e}")
     
     def share_resource(self, path: str, share_to_all: bool = False) -> Optional[SharedResource]:
         """Share a file or directory with peers.
@@ -502,27 +607,50 @@ class FileShareManager:
             
             # Check if we can access this resource
             if resource.can_access(self.username):
-                # Store the resource
-                self.received_resources[resource.id] = resource
-                self._save_resources()
+                # Check if we already have this resource
+                existing_resource = self.received_resources.get(resource.id)
                 
-                # Create the owner's directory if it doesn't exist
-                owner_dir = self.share_dir / resource.owner
-                owner_dir.mkdir(exist_ok=True)
-                
-                # Check if this resource needs to be downloaded
-                if resource.id not in self.downloaded_resources:
-                    # Download the resource in a separate thread
-                    download_thread = threading.Thread(
-                        target=self._download_resource,
-                        args=(resource, addr[0])
-                    )
-                    download_thread.daemon = True
-                    download_thread.start()
-                
-                self.discovery.debug_print(
-                    f"Received shared {'directory' if resource.is_directory else 'file'} from {resource.owner}: {os.path.basename(resource.path)}"
-                )
+                if existing_resource:
+                    # If we have it, check if it's been updated
+                    if resource.modified_time > existing_resource.modified_time:
+                        self.discovery.debug_print(f"Resource updated: {resource.path}")
+                        
+                        # Update the resource in our records
+                        self.received_resources[resource.id] = resource
+                        self._save_resources()
+                        
+                        # Remove from downloaded list to force re-download
+                        if resource.id in self.downloaded_resources:
+                            self.downloaded_resources.remove(resource.id)
+                        
+                        # Download the updated resource
+                        download_thread = threading.Thread(
+                            target=self._download_resource,
+                            args=(resource, addr[0])
+                        )
+                        download_thread.daemon = True
+                        download_thread.start()
+                        
+                        self.discovery.debug_print(f"Downloading updated resource: {resource.path}")
+                else:
+                    # New resource, store it
+                    self.received_resources[resource.id] = resource
+                    self._save_resources()
+                    
+                    # Create the owner's directory if it doesn't exist
+                    owner_dir = self.share_dir / resource.owner
+                    owner_dir.mkdir(exist_ok=True)
+                    
+                    # Download the resource if we haven't already
+                    if resource.id not in self.downloaded_resources:
+                        download_thread = threading.Thread(
+                            target=self._download_resource,
+                            args=(resource, addr[0])
+                        )
+                        download_thread.daemon = True
+                        download_thread.start()
+                        
+                        self.discovery.debug_print(f"Received new shared resource: {resource.path}")
             
         except Exception as e:
             self.discovery.debug_print(f"Error handling resource announcement: {e}")
@@ -540,6 +668,15 @@ class FileShareManager:
             # Create destination path
             dest_dir = self.share_dir / resource.owner
             dest_path = dest_dir / os.path.basename(resource.path)
+            
+            # If the file already exists and this is an update, remove the old version
+            if dest_path.exists() and resource.id in self.received_resources:
+                if resource.is_directory:
+                    shutil.rmtree(dest_path)
+                else:
+                    os.remove(dest_path)
+                
+                self.discovery.debug_print(f"Removed old version of {dest_path}")
             
             # Create FTP connection
             ftp = ftplib.FTP()
