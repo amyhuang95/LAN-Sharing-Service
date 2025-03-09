@@ -202,7 +202,7 @@ class FileShareView:
             text.extend([
                 ("", "  "),
                 ("class:border", "│"),
-                ("class:label", f" {'ID':<8} {'Type':<10} {'Name':<20} {'Owner':<12} {'Access':<12} {'Shared On':<16} {'Last Modified':<25}"),
+                ("class:label", f" {'ID':<8} {'Type':<10} {'Name':<20} {'Owner':<12} {'Access':<12} {'Shared On':<16} {'Last Modified':<20}"),
                 ("class:border", "│"),
                 ("", "\n"),
                 ("", "  "),
@@ -249,7 +249,7 @@ class FileShareView:
         # Footer
         text.extend([
             ("", "  "),
-            ("class:border", "╰" + "─" * 110 + "╯"),  # Increased width to 110
+            ("class:border", "╰" + "─" * 120 + "╯"),  # Increased width to 120
             ("", "\n\n"),
             ("class:help", "  Commands:\n"),
             ("class:help", "    [s] Share file/directory   [a] Add user access    [r] Remove user access\n"),
