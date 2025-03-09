@@ -143,14 +143,45 @@ class UDPPeerDiscovery(PeerDiscovery):
         """
         if packet['username'] != self.username:
             now = datetime.now()
+            
+            # Check if this is a new peer or an existing one
+            is_new_peer = packet['username'] not in self.peers
+            
             self.peers[packet['username']] = Peer(
                 username=packet['username'],
                 address=addr[0],
                 last_seen=now,
-                first_seen=now if packet['username'] not in self.peers else 
-                          self.peers[packet['username']].first_seen # use current time for newly connected peer, keep the old value for already connected peer
+                first_seen=now if is_new_peer else 
+                        self.peers[packet['username']].first_seen # use current time for newly connected peer, keep the old value for already connected peer
             )
             self.debug_print(f"Updated peer: {packet['username']} at {addr[0]}")
+            
+            # If this is a new peer, announce all our shared resources to them
+            if is_new_peer:
+                self.debug_print(f"New peer detected: {packet['username']} - announcing shared resources")
+                # Get all resources shared by this user
+                own_resources = [r for r in self.file_share_manager.shared_resources.values() 
+                            if r.owner == self.username and 
+                                (r.shared_to_all or packet['username'] in r.allowed_users)]
+                
+                # Announce each resource that this peer can access
+                for resource in own_resources:
+                    # Use direct UDP message to the new peer instead of broadcast
+                    try:
+                        announce_packet = {
+                            'type': 'file_share',
+                            'action': 'announce',
+                            'data': resource.to_dict()
+                        }
+                        
+                        # Send directly to the new peer
+                        self.udp_socket.sendto(
+                            json.dumps(announce_packet).encode(),
+                            (addr[0], self.config.port)
+                        )
+                        self.debug_print(f"Announced resource {resource.id} to new peer {packet['username']}")
+                    except Exception as e:
+                        self.debug_print(f"Error announcing resource to new peer: {e}")
 
     def _handle_message(self, packet: Dict):
         """Processes incoming messages received from other peers.
