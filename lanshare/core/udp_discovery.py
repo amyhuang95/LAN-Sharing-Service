@@ -222,14 +222,11 @@ class UDPPeerDiscovery(PeerDiscovery):
             packet: Dict containing the disconnection announcement
         """
         username = packet.get('username')
-        
         if username and username != self.username and username in self.peers:
             self.debug_print(f"Peer disconnected: {username}")
-            
             # Remove from peers list
             if username in self.peers:
                 del self.peers[username]
-            
             # Clean up their shared resources
             self._cleanup_disconnected_peer_resources(username)
 
