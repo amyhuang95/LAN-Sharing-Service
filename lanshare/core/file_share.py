@@ -781,13 +781,10 @@ class FileShareManager:
                     # Skip special directories
                     if name in ('.', '..'):
                         continue
-                    
                     # Check if it's a directory (first character of permissions is 'd')
                     is_dir = parts[0].startswith('d')
-                    
                     # Create full local path for this item
                     local_item_path = os.path.join(local_dir, name)
-                    
                     if is_dir:
                         # Recursively download directory
                         self.debug_log(f"Found subdirectory: {name}")
@@ -827,16 +824,13 @@ class FileShareManager:
                                 self.debug_log(f"Second attempt successful. File size: {file_size} bytes")
                         else:
                             self.debug_log(f"Successfully downloaded file {name} ({file_size} bytes)")
-                
-                # Return to original directory
+                # Rturn to original directory
                 ftp.cwd(original_dir)
-                
             except Exception as e:
                 self.debug_log(f"Error during directory download: {e}")
                 # Log the full exception traceback for better debugging
                 import traceback
                 self.debug_log(f"Traceback: {traceback.format_exc()}")
-                
                 # Try to go back to original directory
                 try:
                     ftp.cwd(original_dir)
@@ -860,15 +854,12 @@ class FileShareManager:
         try:
             resource_id = data.get('resource_id')
             username = data.get('username')
-            
             if username != self.username:
                 return
-            
             # Check if we have this resource
             for resources in [self.shared_resources, self.received_resources]:
                 if resource_id in resources:
                     resource = resources[resource_id]
-                    
                     if add:
                         resource.add_user(username)
                         # Download the resource if we're being granted access
@@ -890,11 +881,9 @@ class FileShareManager:
                     else:
                         # Remove access
                         resource.remove_user(username)
-                        
                         # If we're receiving this message and we're not the owner, remove the file
                         if resource.owner != self.username:
                             self._remove_shared_resource(resource)
-                            
                             # Also remove from downloaded resources list
                             if resource_id in self.downloaded_resources:
                                 self.downloaded_resources.remove(resource_id)
@@ -902,9 +891,7 @@ class FileShareManager:
                             # Remove from received resources if it's not shared to all
                             if not resource.shared_to_all and resource_id in self.received_resources:
                                 del self.received_resources[resource_id]
-                    
                     self._save_resources()
-                    
                     action_str = "added to" if add else "removed from"
                     self.discovery.debug_print(
                         f"You were {action_str} the access list for {os.path.basename(resource.path)} from {resource.owner}"
@@ -917,7 +904,6 @@ class FileShareManager:
         try:
             # Get the path to the resource in the shared directory
             resource_path = self.share_dir / resource.owner / os.path.basename(resource.path)
-            
             if not resource_path.exists():
                 self.discovery.debug_print(f"Resource not found for removal: {resource_path}")
                 return
@@ -934,33 +920,27 @@ class FileShareManager:
                     self.discovery.debug_print(f"Removed shared file: {resource_path}")
                 except Exception as e:
                     self.discovery.debug_print(f"Error removing file {resource_path}: {e}")
-            
         except Exception as e:
             self.discovery.debug_print(f"Error removing shared resource: {e}")
     
     def _find_existing_shared_resource(self, path: str) -> Optional[SharedResource]:
         normalized_path = os.path.abspath(path)
-        
         # Check if the same path is already shared
         for resource in self.shared_resources.values():
             if os.path.abspath(resource.path) == normalized_path and resource.owner == self.username:
                 return resource
-            
         return None
     
     def list_shared_resources(self, include_own: bool = True) -> List[SharedResource]:
         resources = []
         if include_own:
             resources.extend(self.shared_resources.values())
-        
         resources.extend(self.received_resources.values())
-        
         return sorted(resources, key=lambda r: r.timestamp, reverse=True)
     
     def get_resource_by_id(self, resource_id: str) -> Optional[SharedResource]:
         if resource_id in self.shared_resources:
             return self.shared_resources[resource_id]
-        
         if resource_id in self.received_resources:
             return self.received_resources[resource_id]
         return None
