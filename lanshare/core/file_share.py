@@ -19,12 +19,12 @@ from .types import Peer
 import logging
 
 # Configure logging to write to a file
-log_file_dir = Path.cwd()  # Current working directory (project home)
+log_file_dir = Path.cwd()
 log_file = log_file_dir / 'file_transfer_log.txt'
 
 # If the log file already exists, delete it to start fresh
 if log_file.exists():
-    log_file.unlink()  # This deletes the file
+    log_file.unlink() 
 
 # Configure logging with the clean log file
 logging.basicConfig(
@@ -58,7 +58,6 @@ class SharedResource:
                  shared_to_all: bool = False,
                  ftp_password: str = None):
         """Initialize a SharedResource instance.
-        
         Args:
             owner: Username of the resource owner.
             path: Path to the resource on the owner's system.
@@ -82,11 +81,6 @@ class SharedResource:
             self.modified_time = time.time()
     
     def to_dict(self) -> Dict:
-        """Convert to dictionary representation.
-        
-        Returns:
-            Dictionary representation of the shared resource.
-        """
         return {
             'id': self.id,
             'owner': self.owner,
@@ -101,14 +95,6 @@ class SharedResource:
     
     @classmethod
     def from_dict(cls, data: Dict) -> 'SharedResource':
-        """Create a SharedResource from a dictionary.
-        
-        Args:
-            data: Dictionary containing shared resource data.
-            
-        Returns:
-            SharedResource instance.
-        """
         resource = cls(
             owner=data['owner'],
             path=data['path'],
@@ -123,44 +109,18 @@ class SharedResource:
         return resource
     
     def add_user(self, username: str) -> None:
-        """Add a user to the allowed users list.
-        
-        Args:
-            username: Username to add.
-        """
         self.allowed_users.add(username)
     
     def remove_user(self, username: str) -> None:
-        """Remove a user from the allowed users list.
-        
-        Args:
-            username: Username to remove.
-        """
         if username in self.allowed_users:
             self.allowed_users.remove(username)
     
     def can_access(self, username: str) -> bool:
-        """Check if a user can access this resource.
-        
-        Args:
-            username: Username to check.
-            
-        Returns:
-            True if the user can access, False otherwise.
-        """
         return (self.owner == username or 
                 username in self.allowed_users or 
                 self.shared_to_all)
     
     def update_modified_time(self, new_time: float) -> bool:
-        """Update the resource's modification time.
-        
-        Args:
-            new_time: New modification time.
-            
-        Returns:
-            True if the time was updated, False if it's the same.
-        """
         if new_time != self.modified_time:
             self.modified_time = new_time
             return True
@@ -180,12 +140,6 @@ class FileShareManager:
     """
     
     def __init__(self, username: str, discovery_service):
-        """Initialize the FileShareManager.
-        
-        Args:
-            username: Username of the user.
-            discovery_service: The discovery service instance.
-        """
         self.username = username
         self.discovery = discovery_service
         self.config = discovery_service.config
@@ -193,11 +147,9 @@ class FileShareManager:
         # Directory where shared files are stored
         self.share_dir = Path.cwd() / 'shared'
         self.share_dir.mkdir(exist_ok=True)
-        
         # Create directory for this user's shared files
         self.user_share_dir = self.share_dir / username
         self.user_share_dir.mkdir(exist_ok=True)
-        
         # Tracking shared resources
         self.shared_resources: Dict[str, SharedResource] = {}
         self.received_resources: Dict[str, SharedResource] = {}
@@ -209,12 +161,10 @@ class FileShareManager:
         self.authorizer = DummyAuthorizer()
         self.ftp_handler = FTPHandler
         self.ftp_handler.authorizer = self.authorizer
-        
         # Configure FTP handler for binary mode by default
         self.ftp_handler.use_encoding = 'utf-8'
         # Force binary mode for all file transfers
         self.ftp_handler.use_binary = True
-        
         # Add the user to the authorizer with full permissions to their share directory
         self.default_password = "anonymous"  # Simplified password for easier testing
         self.authorizer.add_user(
@@ -223,7 +173,6 @@ class FileShareManager:
             homedir=str(self.user_share_dir),
             perm='elradfmwMT'  # Full permissions
         )
-        
         # Also add anonymous user for easier access
         try:
             self.authorizer.add_anonymous(str(self.user_share_dir), perm='elr')
@@ -233,22 +182,18 @@ class FileShareManager:
         # Set up FTP server
         self.ftp_server = None
         self.ftp_address = ('0.0.0.0', self.config.port + 1)  # Use next port after discovery port
-        
         # File sync settings
         self.sync_interval = 5  # Check for updates every 5 seconds
         self.sync_thread = None
         self.sync_running = False
-        
         # Server thread
         self.server_thread = None
         self.running = False
-        
         # Load previously shared resources
         self._load_resources()
     
     def debug_log(self, message):
         """Log debug messages to a file.
-        
         Args:
             message: The message to log.
         """
@@ -256,7 +201,6 @@ class FileShareManager:
     
     def _generate_password(self) -> str:
         """Generate a random password for FTP access.
-        
         Returns:
             Random password string.
         """
@@ -297,7 +241,6 @@ class FileShareManager:
             self.discovery.debug_print(f"Error saving shared resources: {e}")
     
     def start(self) -> None:
-        """Start the file sharing service."""
         if not self.running:
             try:
                 # Create and start FTP server
@@ -305,7 +248,6 @@ class FileShareManager:
                 self.server_thread = threading.Thread(target=self.ftp_server.serve_forever)
                 self.server_thread.daemon = True
                 self.server_thread.start()
-                
                 # Start file synchronization thread
                 self.sync_running = True
                 self.sync_thread = threading.Thread(target=self._file_sync_loop)
@@ -314,7 +256,6 @@ class FileShareManager:
                 
                 self.running = True
                 self.discovery.debug_print(f"File sharing server started on port {self.ftp_address[1]}")
-                
                 # Announce previously shared resources
                 for resource in self.shared_resources.values():
                     self._announce_resource(resource)
@@ -323,7 +264,6 @@ class FileShareManager:
                 self.discovery.debug_print(f"Error starting file sharing server: {e}")
     
     def stop(self) -> None:
-        """Stop the file sharing service."""
         if self.running:
             try:
                 self.running = False
@@ -341,7 +281,6 @@ class FileShareManager:
                 self._check_for_file_updates()
             except Exception as e:
                 self.discovery.debug_print(f"Error in file sync loop: {e}")
-            
             # Sleep for the sync interval
             time.sleep(self.sync_interval)
     
@@ -353,42 +292,32 @@ class FileShareManager:
                 if not os.path.exists(resource.path):
                     self.discovery.debug_print(f"Original file no longer exists: {resource.path}")
                     continue
-                
                 # Get the current modification time
                 current_mod_time = os.path.getmtime(resource.path)
-                
                 # Check if the file has been modified
                 if current_mod_time > resource.modified_time:
                     self.discovery.debug_print(f"File updated: {resource.path}")
-                    
                     # Update the modification time
                     resource.update_modified_time(current_mod_time)
-                    
                     # Re-copy the file to the shared directory
                     self._update_shared_copy(resource)
-                    
                     # Save the updated resource info
                     self._save_resources()
-                    
                     # Announce the update to peers
                     self._announce_resource(resource)
-                    
             except Exception as e:
                 self.discovery.debug_print(f"Error checking for updates on {resource.path}: {e}")
     
     def _update_shared_copy(self, resource: SharedResource) -> None:
         """Update the shared copy of a file that has been modified.
-        
         Args:
             resource: The shared resource to update.
         """
         try:
             # Get the filename
             filename = os.path.basename(resource.path)
-            
             # Path in the shared directory
             share_path = self.user_share_dir / filename
-            
             if resource.is_directory:
                 # If it's a directory, remove the old one and re-copy
                 if share_path.exists():
@@ -397,19 +326,15 @@ class FileShareManager:
             else:
                 # For files, just overwrite
                 shutil.copy2(resource.path, share_path)
-                
             self.discovery.debug_print(f"Updated shared copy of {resource.path}")
-            
         except Exception as e:
             self.discovery.debug_print(f"Error updating shared copy: {e}")
     
     def share_resource(self, path: str, share_to_all: bool = False) -> Optional[SharedResource]:
         """Share a file or directory with peers.
-        
         Args:
             path: Path to the file or directory to share.
             share_to_all: Whether to share with all peers.
-            
         Returns:
             SharedResource if successful, None otherwise.
         """
@@ -424,9 +349,7 @@ class FileShareManager:
             if existing_resource:
                 self.debug_log(f"Resource already shared with ID: {existing_resource.id}")
                 return existing_resource
-                
             is_directory = os.path.isdir(path)
-            
             # Create shared resource with password
             resource = SharedResource(
                 owner=self.username,
@@ -435,11 +358,9 @@ class FileShareManager:
                 shared_to_all=share_to_all,
                 ftp_password=self.default_password
             )
-            
             # Create symlink or copy file in user's share directory
             resource_name = os.path.basename(path)
             target_path = self.user_share_dir / resource_name
-            
             # Handle name conflicts by appending a number
             counter = 1
             original_name = resource_name
@@ -448,7 +369,6 @@ class FileShareManager:
                 resource_name = f"{name_parts[0]}_{counter}{name_parts[1] if len(name_parts) > 1 else ''}"
                 target_path = self.user_share_dir / resource_name
                 counter += 1
-            
             # ALWAYS copy the file/directory instead of using symlinks
             # This ensures FTP access will work properly
             if is_directory:
@@ -461,13 +381,10 @@ class FileShareManager:
             # Add to shared resources
             self.shared_resources[resource.id] = resource
             self._save_resources()
-            
             # Announce to peers
             self._announce_resource(resource)
-            
             self.debug_log(f"Shared {'directory' if is_directory else 'file'}: {path}")
             return resource
-            
         except Exception as e:
             self.debug_log(f"Error sharing resource: {e}")
             import traceback
@@ -476,7 +393,6 @@ class FileShareManager:
     
     def _recursive_copy(self, src_path, dest_path):
         """Recursively copy a directory.
-        
         Args:
             src_path: Source directory path.
             dest_path: Destination directory path.
@@ -484,7 +400,6 @@ class FileShareManager:
         try:
             # Create destination directory
             os.makedirs(dest_path, exist_ok=True)
-            
             # Copy all files and subdirectories
             for item in os.listdir(src_path):
                 src_item_path = os.path.join(src_path, item)
@@ -495,15 +410,13 @@ class FileShareManager:
                     self._recursive_copy(src_item_path, dest_item_path)
                 else:
                     # Copy file
-                    shutil.copy2(src_item_path, dest_item_path)
-                    
+                    shutil.copy2(src_item_path, dest_item_path) 
             self.discovery.debug_print(f"Recursively copied directory from {src_path} to {dest_path}")
         except Exception as e:
             self.discovery.debug_print(f"Error in recursive copy: {e}")
     
     def _announce_resource(self, resource: SharedResource) -> None:
         """Announce a shared resource to peers.
-        
         Args:
             resource: The resource to announce.
         """
@@ -518,40 +431,32 @@ class FileShareManager:
             self.discovery.udp_socket.sendto(
                 json.dumps(packet).encode(),
                 ('<broadcast>', self.config.port)
-            )
-            
+            )    
         except Exception as e:
             self.discovery.debug_print(f"Error announcing resource: {e}")
     
     def update_resource_access(self, resource_id: str, username: str, add: bool = True) -> bool:
         """Update access permissions for a shared resource.
-        
         Args:
             resource_id: ID of the resource to update.
             username: Username to add or remove.
             add: True to add access, False to remove.
-            
         Returns:
             True if successful, False otherwise.
         """
         if resource_id not in self.shared_resources:
             return False
-        
         resource = self.shared_resources[resource_id]
-        
         # Only the owner can modify access
         if resource.owner != self.username:
             return False
-        
         if add:
             resource.add_user(username)
             action = 'add_access'
         else:
             resource.remove_user(username)
             action = 'remove_access'
-        
         self._save_resources()
-        
         # Announce access change to the specific user
         try:
             packet = {
@@ -562,7 +467,6 @@ class FileShareManager:
                     'username': username
                 }
             }
-            
             # Send update to specific peer
             peer = self.discovery.peers.get(username)
             if peer:
@@ -570,7 +474,6 @@ class FileShareManager:
                     json.dumps(packet).encode(),
                     (peer.address, self.config.port)
                 )
-                
                 # If adding access, also re-announce the resource to trigger download
                 if add:
                     self._announce_resource(resource)
@@ -582,30 +485,23 @@ class FileShareManager:
         return True
     
     def set_share_to_all(self, resource_id: str, share_to_all: bool) -> bool:
-        """Set whether a resource is shared with all peers.
-        
+        """Set whether a resource is shared with all peers
         Args:
             resource_id: ID of the resource to update.
-            share_to_all: Whether to share with all peers.
-            
+            share_to_all: Whether to share with all peers.  
         Returns:
             True if successful, False otherwise.
         """
         if resource_id not in self.shared_resources:
             return False
-        
         resource = self.shared_resources[resource_id]
-        
         # Only the owner can modify access
         if resource.owner != self.username:
             return False
-        
         resource.shared_to_all = share_to_all
         self._save_resources()
-        
         # Announce update
         self._announce_resource(resource)
-        
         return True
     
     def handle_file_share_packet(self, packet: Dict, addr: tuple) -> None:
@@ -627,21 +523,17 @@ class FileShareManager:
     
     def _handle_resource_announcement(self, data: Dict, addr: tuple) -> None:
         """Handle a resource announcement.
-        
         Args:
             data: The resource data.
             addr: The address the announcement came from.
         """
         try:
             resource = SharedResource.from_dict(data)
-            
             # Skip if we're the owner
             if resource.owner == self.username:
                 return
-            
             # Check if we already have this resource
             existing_resource = self.received_resources.get(resource.id)
-            
             # If we had the resource but no longer have access, remove it
             if existing_resource and not resource.can_access(self.username):
                 self.discovery.debug_print(f"Access revoked for: {resource.path}")
@@ -657,7 +549,6 @@ class FileShareManager:
                     
                 self._save_resources()
                 return
-            
             # Normal handling for resources we can access
             if resource.can_access(self.username):
                 if existing_resource:
@@ -708,7 +599,6 @@ class FileShareManager:
 
     def _download_resource(self, resource: SharedResource, host_ip: str) -> None:
         """Download a resource from a peer.
-        
         Args:
             resource: The resource to download.
             host_ip: The IP address of the host.
@@ -838,7 +728,6 @@ class FileShareManager:
             
             # Close connection
             ftp.quit()
-            
             # Only mark as downloaded if the file exists and has content
             if os.path.exists(dest_path) and (resource.is_directory or os.path.getsize(dest_path) > 0):
                 self.downloaded_resources.add(resource.id)
@@ -846,7 +735,6 @@ class FileShareManager:
                 self.debug_log(f"Downloaded {resource.path} to {dest_path}")
             else:
                 self.debug_log(f"Download failed or resulted in empty file: {resource.path}")
-            
         except Exception as e:
             self.debug_log(f"Error in download_resource: {e}")
             # Log the full exception traceback for better debugging
@@ -855,7 +743,6 @@ class FileShareManager:
 
     def _download_directory_recursive(self, ftp, remote_dir, local_dir):
         """Download a directory recursively.
-        
         Args:
             ftp: FTP connection.
             remote_dir: Remote directory name.
@@ -877,7 +764,6 @@ class FileShareManager:
                 file_list = []
                 ftp.dir(file_list.append)
                 self.debug_log(f"Directory contents: {file_list}")
-                
                 # Process each item
                 for item in file_list:
                     # Parse the directory listing line
@@ -966,7 +852,6 @@ class FileShareManager:
             
     def _handle_access_update(self, data: Dict, addr: tuple, add: bool) -> None:
         """Handle an access update.
-        
         Args:
             data: The update data.
             addr: The address the update came from.
@@ -1029,11 +914,6 @@ class FileShareManager:
             self.discovery.debug_print(f"Error handling access update: {e}")
             
     def _remove_shared_resource(self, resource: SharedResource) -> None:
-        """Remove a shared resource from the file system when access is revoked.
-        
-        Args:
-            resource: The resource to remove.
-        """
         try:
             # Get the path to the resource in the shared directory
             resource_path = self.share_dir / resource.owner / os.path.basename(resource.path)
@@ -1041,7 +921,6 @@ class FileShareManager:
             if not resource_path.exists():
                 self.discovery.debug_print(f"Resource not found for removal: {resource_path}")
                 return
-                
             # Remove the file or directory
             if resource.is_directory:
                 try:
@@ -1060,14 +939,6 @@ class FileShareManager:
             self.discovery.debug_print(f"Error removing shared resource: {e}")
     
     def _find_existing_shared_resource(self, path: str) -> Optional[SharedResource]:
-        """Check if a path is already shared by the current user.
-        
-        Args:
-            path: Path to check.
-            
-        Returns:
-            The existing SharedResource if already shared, None otherwise.
-        """
         normalized_path = os.path.abspath(path)
         
         # Check if the same path is already shared
@@ -1078,16 +949,7 @@ class FileShareManager:
         return None
     
     def list_shared_resources(self, include_own: bool = True) -> List[SharedResource]:
-        """List shared resources.
-        
-        Args:
-            include_own: Whether to include resources shared by this user.
-            
-        Returns:
-            List of SharedResource instances.
-        """
         resources = []
-        
         if include_own:
             resources.extend(self.shared_resources.values())
         
@@ -1096,18 +958,9 @@ class FileShareManager:
         return sorted(resources, key=lambda r: r.timestamp, reverse=True)
     
     def get_resource_by_id(self, resource_id: str) -> Optional[SharedResource]:
-        """Get a resource by ID.
-        
-        Args:
-            resource_id: ID of the resource.
-            
-        Returns:
-            SharedResource if found, None otherwise.
-        """
         if resource_id in self.shared_resources:
             return self.shared_resources[resource_id]
         
         if resource_id in self.received_resources:
             return self.received_resources[resource_id]
-        
         return None
