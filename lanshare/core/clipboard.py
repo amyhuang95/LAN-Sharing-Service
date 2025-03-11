@@ -33,6 +33,8 @@ class Clipboard:
         self.local_clips: List[Clip] = []
         self.max_clips = 20        
 
+        self.clipboard_lock = threading.Lock()
+
     def start(self) -> None:
         """Start all services."""
         self._start_threads()
@@ -108,10 +110,13 @@ class Clipboard:
                 self.debug_print(f"Packet receiving error: {e}")
 
     def _process_remote_clip(self, clip: Clip) -> None:
-        self.curr_clip_content = clip.content
-        clip.source = 'remote'
-        self.add_to_clip_history(clip, self.remote_clips)
-        self.update_local_clipboard(clip.content)
+        """Process clipboard content received from remote peers with proper synchronization."""
+        with self.clipboard_lock:
+            # Update current clipboard content
+            self.curr_clip_content = clip.content
+            clip.source = 'remote'
+            self.add_to_clip_history(clip, self.remote_clips)
+            self.update_local_clipboard(clip.content)
 
     def send_clip(self, clip: Clip) -> None:
         """Send the clip content to all connected peers."""
@@ -152,4 +157,3 @@ class Clipboard:
             return self.local_clips
         elif source == 'remote':
             return self.remote_clips
-    
