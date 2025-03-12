@@ -108,7 +108,7 @@ class InteractiveSession:
             return
 
         if not self.clipboard.activate:
-            print("Clipboard sharing is not activated. Restart the application with --sc flag for activation.")
+            print("Clipboard sharing is not activated. Restart the application with -sc flag for activation.")
             return
 
         recipients = args
@@ -134,7 +134,7 @@ class InteractiveSession:
             return
 
         if not self.clipboard.activate:
-            print("Clipboard sharing is not activated. Restart the application with --sc flag for activation.")
+            print("Clipboard sharing is not activated. Restart the application with -sc flag for activation.")
             return
         
         senders = args
