@@ -26,6 +26,7 @@ class Config:
         self.config_file = Path.home() / '.lanshare.conf'
         self.max_debug_messages = 100
         self.port = 12345  # Single port for all UDP communication
+        self.clipboard_port = 12346
         self.peer_timeout = 2.0  # seconds
         self.broadcast_interval = 0.1  # seconds
         self.load_config()

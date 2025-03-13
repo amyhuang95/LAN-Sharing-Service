@@ -105,3 +105,24 @@ class Message:
             'conversation_id': self.conversation_id,
             'reply_to': self.reply_to
         }
+
+@dataclass
+class Clip:
+    id: str
+    content: str
+    source: str
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'Clip':
+        return cls(
+            id=data['id'],
+            content=data['content'],
+            source=data['source']
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'id': self.id,
+            'content': self.content,
+            'source': self.source
+        }
