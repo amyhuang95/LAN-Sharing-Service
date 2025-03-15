@@ -108,6 +108,16 @@ class Message:
 
 @dataclass
 class Clip:
+    """
+    Represents a clipboard content (clip) in the LAN sharing service.
+    Attributes:
+        id (str): Unique identifier for the clip.
+        content (str): The actual content of the clip.
+        source (str): The source/origin of the clip (e.g., device name or identifier).
+    Methods:
+        from_dict(data): Creates a Clip instance from a dictionary representation.
+        to_dict(): Converts the Clip instance to a dictionary representation.
+    """
     id: str
     content: str
     source: str
