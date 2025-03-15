@@ -17,6 +17,7 @@ import signal
 
 from lanshare.config.settings import Config
 from lanshare.core.udp_discovery import UDPPeerDiscovery
+from lanshare.core.clipboard import Clipboard
 from lanshare.ui.session import InteractiveSession
 
 def generate_user_id(username: str) -> str:
@@ -74,6 +75,8 @@ def main():
     parser = argparse.ArgumentParser(description='LAN Peer Discovery Service')
     parser.add_argument('command', choices=['create'], help='Command to execute')
     parser.add_argument('--username', help='Username for the peer', required=False)
+    parser.add_argument("-sc", "--share_clip", help="Share locally copied contents with connected peers", action="store_true")
+    parser.add_argument("-rc", "--receive_clip", help="Receive contents copied by connected peers", action="store_true")
     
     args = parser.parse_args()
     
@@ -88,6 +91,11 @@ def main():
         config = Config()
         discovery = UDPPeerDiscovery(username_with_id, config)
         discovery.start()
+
+        # Start clipboard sharing service if user asks for either sending local copies to peers or receiving copies from peers
+        if args.share_clip or args.receive_clip:
+            clipboard = Clipboard(discovery, config, args.share_clip, args.receive_clip)
+            clipboard.start()
         
         # Start terminal UI
         session = InteractiveSession(discovery)
