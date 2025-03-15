@@ -10,13 +10,18 @@ from datetime import datetime
 from .debug_view import DebugView
 from .user_list_view import UserListView
 from .message_view import MessageView, send_new_message
+
+from ..core.udp_discovery import UDPPeerDiscovery
+from ..core.clipboard import Clipboard
+
 from .file_share_view import FileShareView
 from ..core.file_share import SharedResource
 
 
 class InteractiveSession:
-    def __init__(self, discovery):
+    def __init__(self, discovery: UDPPeerDiscovery, clipboard: Clipboard):
         self.discovery = discovery
+        self.clipboard = clipboard
         # Direct access to the file share manager
         self.file_share_manager = discovery.file_share_manager
         
@@ -26,6 +31,8 @@ class InteractiveSession:
             'msg': self._send_message,
             'lm': self._list_messages,
             'om': self._open_message,
+            'sc': self._share_clipboard,
+            'rc': self._receive_clipboard,
             'share': self._share_file,
             'files': self._list_files,
             'access': self._manage_access,
@@ -201,6 +208,58 @@ class InteractiveSession:
         else:
             print("Error: Failed to update sharing settings. Check that you own the resource and the resource ID is correct.")
 
+    def _share_clipboard(self, *args):
+        """Handle the sc command"""
+        if not args:
+            print("Usage: sc <username_1> <username_2> ...")
+            return
+
+        if not self.clipboard.activate:
+            print("Clipboard sharing is not activated. Restart the application with -sc flag for activation.")
+            return
+
+        recipients = args
+        active_peers = self.discovery.list_peers()
+
+        # Check at least one requested recipient is online
+        at_least_one_online = False
+        for recipient in recipients:
+            if recipient in active_peers:
+                at_least_one_online = True
+            else:
+                print(f"User '{recipient}' not found or offline")
+        if not at_least_one_online:
+            print("None of the provided peers is online")
+            return
+
+        self.clipboard.update_send_to_peers(recipients)
+    
+    def _receive_clipboard(self, *args):
+        """Handle the rc command"""
+        if not args:
+            print("Usage: rc <username_1> <username_2> ...")
+            return
+
+        if not self.clipboard.activate:
+            print("Clipboard sharing is not activated. Restart the application with -sc flag for activation.")
+            return
+        
+        senders = args
+        active_peers = self.discovery.list_peers()
+
+        # Check at least one requested sender is online
+        at_least_one_online = False
+        for sender in senders:
+            if sender in active_peers:
+                at_least_one_online = True
+            else:
+                print(f"User '{sender}' not found or offline")
+        if not at_least_one_online:
+            print("None of the provided peers is online")
+            return
+
+        self.clipboard.update_receive_from_peers(senders)
+
     def show_help(self, *args):
         """Show help message"""
         print("\nAvailable commands:")
@@ -212,6 +271,8 @@ class InteractiveSession:
         print("  files  - List shared files")
         print("  access - Manage access to shared resources (access <id> <user> [add|rm])")
         print("  all    - Share resource with everyone (all <id> [on|off])")
+        print("  sc     - Share clipboard (sc <username_1> <username_2> ...)")
+        print("  rc     - Receive clipboard from peers (rc <username_1> <username_2> ...)")
         print("  debug  - Toggle debug mode")
         print("  clear  - Clear screen")
         print("  help   - Show this help message")
