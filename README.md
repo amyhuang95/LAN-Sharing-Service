@@ -1,6 +1,23 @@
 # LAN Sharing Service
 A local-area-network (LAN) sharing service that shares files and clipboards across different devices in local area network, essientially, it means transferring files directly between devices on the same network without going through the internet. 
 
+## Table of Contents
+- [Overview](#lan-sharing-service)
+- [Critical User Journeys (CUJ)](#cuj)
+- [Prerequisites](#prerequisite)
+- [Getting Started](#start)
+- [Usage Notes](#note)
+- [Demonstrations](#demo)
+  - [Video Demos](#video-iter1)
+- [File Sharing Features](#iter2-file-sharing-commands)
+  - [Sharing Files](#share-share-path-to-a-filedirectory)
+  - [Viewing Shared Files](#show-all-shared-files-files)
+  - [Managing Access](#regular-access-command-access-resource_id-user_id-addrm)
+- [Basic Commands](#iter1-basic-commands---peer-discovery--message)
+  - [User List](#user-list-ul)
+  - [Debug View](#debug-view-debug)
+  - [Messaging](#message-view-om-lm-msg)
+
 ## CUJ
 - *CUJ#1:* sub LAN with access code;
 - *CUJ#2:* peer discoveries (in LAN and sub-LAN);
