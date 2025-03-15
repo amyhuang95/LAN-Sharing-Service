@@ -1,3 +1,5 @@
+"""This module implements the clipboard sharing feature."""
+
 import socket
 import time
 from typing import List
@@ -12,11 +14,32 @@ import threading
 class Clipboard:
 
     def __init__(self, discovery: UDPPeerDiscovery, config: Config, activate: bool):
-        """Default not share local clips to peers or accepts clips from peers for better security."""
-        self.curr_clip_content = pyperclip.paste() # initialize to previously copied content
-        self.clipboard_lock = threading.Lock() # to resolve concurrent update on curr_clip_content
-        self.send_to_peers = set() # peers to send local clips to
-        self.receive_from_peers = set() # peers to receive remote clips from
+        """Initialize the Clipboard synchronization service.
+        This constructor sets up the clipboard service that allows sharing clipboard content
+        between peers on a local network.
+
+        Args:
+            discovery (UDPPeerDiscovery): Discovery service to identify active peers on the network.
+            config (Config): Configuration settings for the clipboard service.
+            activate (bool): Whether to immediately activate the clipboard service upon initialization.
+                If True, the service starts running; if False, it needs to be manually started later.
+
+        Attributes:
+            curr_clip_content (str): The current clipboard content, initialized with the last copied content.
+            clipboard_lock (threading.Lock): Lock to prevent concurrent updates to the clipboard content.
+            send_to_peers (set): Set of peers to which local clipboard content will be sent.
+            receive_from_peers (set): Set of peers from which remote clipboard content will be accepted.
+            username (str): Username obtained from the discovery service.
+            in_live_view (bool): Flag indicating if the clipboard is currently being viewed live.
+            udp_socket (socket.socket): UDP socket used for sending/receiving clipboard content.
+            clip_list (List[Clip]): List to track recent clipboard items.
+            max_clips (int): Maximum number of clipboard items to retain in history.
+            running (bool): Flag indicating if the clipboard service is currently running.
+        """
+        self.curr_clip_content = pyperclip.paste()
+        self.clipboard_lock = threading.Lock()
+        self.send_to_peers = set()
+        self.receive_from_peers = set()
 
         # Config Set up
         self.discovery = discovery # to get a list of active peers's address
@@ -81,7 +104,16 @@ class Clipboard:
             time.sleep(0.5)
 
     def _process_local_clip(self, content: str) -> None:
-        """Process newly detected local clip by updating the current clipt content and send it to peers."""
+        """
+        Process a newly detected local clipboard change.
+        
+        This method updates the current clipboard content and shares it with all connected peers.
+        It generates a unique ID for the clip, broadcasts it to allowed peers, and adds it to the
+        local clip history.
+        
+        Args:
+            content (str): The new clipboard content detected locally
+        """
         with self.clipboard_lock:
             self.curr_clip_content = content
             clip = Clip(
@@ -109,7 +141,15 @@ class Clipboard:
                 self.debug_print(f"Packet receiving error: {e}")
 
     def _process_remote_clip(self, clip: Clip) -> None:
-        """Process clipboard content received from remote peers with proper synchronization."""
+        """
+        Process clipboard content received from remote peers with proper synchronization.
+
+        This method updates the local clipboard with content received from remote peers,
+        but only if the sender is in the accepted peers list.
+
+        Args:
+            clip (Clip): The clipboard object containing the content and metadata from remote peer
+        """
         if clip.source not in self.receive_from_peers:
             self.debug_print(f"Sender not in accepted peers list")
             return
@@ -120,7 +160,16 @@ class Clipboard:
             self.add_to_clip_history(clip)
 
     def send_clip(self, clip: Clip) -> None:
-        """Send the clip content to all connected peers."""
+        """
+        Send the clip content to selected connected peers.
+        
+        This method sends clipboard content to all allowed peers. 
+        It first checks if there are active peers available,
+        then creates a clip packet and sends it via UDP to each selected peer.
+        
+        Args:
+            clip (Clip): The clipboard content object to be sent.
+        """
         try:
             # Get active peers
             peers = self.discovery.list_peers()
@@ -141,23 +190,43 @@ class Clipboard:
             self.debug_print(f"Error sending clip id {clip.id}: {e}")
 
     def update_send_to_peers(self, peers: list[str]) -> None:
-        """Update the list of peers to send local clips to"""
+        """
+        Update the list of peers that will receive local clipboard changes.
+        
+        This method replaces the current set of peers with a new set created from the provided list. 
+        Only these peers will receive clipboard updates from the local machine.
+
+        Args:
+            peers (list[str]): A list of peer identifiers to send clipboard updates to.
+                              Each identifier should uniquely identify a peer in the network.
+        """
         self.send_to_peers = set(peers)
 
     def update_receive_from_peers(self, peers: list[str]) -> None:
-        """Update the list of peers to receive remote clips from"""
+        """
+        Update the list of peers from which this node will accept remote clipboard data.
+
+        Args:
+            peers (list[str]): List of peer IDs that are allowed to send clipboard 
+                              content to this node. Duplicates will be automatically removed.
+        """
         self.receive_from_peers = set(peers)
 
     def add_to_clip_history(self, clip: Clip) -> None:
-        """Add the clip to a list of received clips."""
+        """
+        Add a clip to the history of received clips.
+
+        This method maintains a bounded history of clips by removing the oldest clip
+        when the maximum capacity is reached.
+
+        Args:
+            clip (Clip): The clip object to be added to the history.
+        """
+
         self.clip_list.append(clip)
         if len(self.clip_list) > self.max_clips:
             self.clip_list.pop(0)
             
-    def get_clipboard_history(self, source: str) -> List[Clip]:
-        """Get a list of clips. Specify 'local' to get local clips, 'remote' for clips from peers."""
-        username = self.discovery.username
-        if source == 'local':
-            return [clip for clip in self.clip_list if clip.source == username]
-        elif source == 'remote':
-            return [clip for clip in self.clip_list if clip.source != username]
+    def get_clipboard_history(self) -> List[Clip]:
+        """Retrieves a list of clip contents from the current clipboard history."""
+        return self.clip_list
