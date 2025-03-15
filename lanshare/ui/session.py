@@ -4,6 +4,8 @@ from prompt_toolkit.styles import Style
 from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.shortcuts import clear
+import os
+from datetime import datetime
 
 from .debug_view import DebugView
 from .user_list_view import UserListView
@@ -12,11 +14,17 @@ from .message_view import MessageView, send_new_message
 from ..core.udp_discovery import UDPPeerDiscovery
 from ..core.clipboard import Clipboard
 
+from .file_share_view import FileShareView
+from ..core.file_share import SharedResource
+
 
 class InteractiveSession:
     def __init__(self, discovery: UDPPeerDiscovery, clipboard: Clipboard):
         self.discovery = discovery
         self.clipboard = clipboard
+        # Direct access to the file share manager
+        self.file_share_manager = discovery.file_share_manager
+        
         self.commands = {
             'ul': self._show_user_list,
             'debug': self._show_debug_view,
@@ -25,6 +33,10 @@ class InteractiveSession:
             'om': self._open_message,
             'sc': self._share_clipboard,
             'rc': self._receive_clipboard,
+            'share': self._share_file,
+            'files': self._list_files,
+            'access': self._manage_access,
+            'all': self._share_with_all,
             'help': self.show_help,
             'clear': self.clear_screen,
             'exit': self.exit_session,
@@ -100,6 +112,101 @@ class InteractiveSession:
         # Open the conversation view
         view = MessageView(self.discovery, other_party)
         view.show_conversation(other_party, conversation_id)
+    
+    def _share_file(self, *args):
+        """Handle the share command to share a file or directory.
+        
+        Args:
+            *args: Command arguments
+        """
+        if not args:
+            print("Usage: share <file_path> or <directory_path>")
+            return
+            
+        path = " ".join(args)  # Handle paths with spaces
+        path = os.path.expanduser(path)  # Expand user paths like ~ and ~user
+        
+        if not os.path.exists(path):
+            print(f"Error: Path not found: {path}")
+            return
+            
+        # Direct call to file_share_manager instead of through discovery
+        resource = self.file_share_manager.share_resource(path)
+        
+        if resource:
+            resource_type = "directory" if resource.is_directory else "file"
+            print(f"Successfully shared {resource_type}: {path}")
+            print(f"Resource ID: {resource.id}")
+            print("By default, only you can access this resource.")
+            print("Use 'access <resource_id> <username> add' to give access to others.")
+            print("Or use 'all <resource_id> on' to share with everyone.")
+        else:
+            print(f"Error: Failed to share {path}")
+    
+    def _list_files(self, *args):
+        """Handle the files command to list shared files.
+        
+        Args:
+            *args: Command arguments
+        """
+        view = FileShareView(self.discovery)
+        view.show()
+    
+    def _manage_access(self, *args):
+        """Handle the access command to manage access to shared resources.
+        
+        Args:
+            *args: Command arguments
+        """
+        if len(args) < 3:
+            print("Usage: access <resource_id> <username> [add|rm]")
+            return
+            
+        resource_id = args[0]
+        username = args[1]
+        action = args[2].lower()
+        
+        if action not in ["add", "rm"]:
+            print("Action must be 'add' or 'rm'")
+            return
+            
+        # Direct call to file_share_manager instead of through discovery
+        result = self.file_share_manager.update_resource_access(
+            resource_id=resource_id,
+            username=username,
+            add=(action == "add")
+        )
+        
+        if result:
+            action_text = "added to" if action == "add" else "removed from"
+            print(f"Successfully {action_text} access list for {username}")
+        else:
+            print(f"Error: Failed to update access. Check that you own the resource and the resource ID is correct.")
+    
+    def _share_with_all(self, *args):
+        """Handle the all command to share with everyone.
+        
+        Args:
+            *args: Command arguments
+        """
+        if len(args) < 2:
+            print("Usage: all <resource_id> [on|off]")
+            return
+            
+        resource_id = args[0]
+        share_all = args[1].lower() == "on"
+        
+        # Direct call to file_share_manager instead of through discovery
+        result = self.file_share_manager.set_share_to_all(
+            resource_id=resource_id,
+            share_to_all=share_all
+        )
+        
+        if result:
+            status = "shared with everyone" if share_all else "no longer shared with everyone"
+            print(f"Resource is now {status}")
+        else:
+            print("Error: Failed to update sharing settings. Check that you own the resource and the resource ID is correct.")
 
     def _share_clipboard(self, *args):
         """Handle the sc command"""
@@ -160,6 +267,10 @@ class InteractiveSession:
         print("  msg    - Send a message (msg <username>)")
         print("  lm     - List all messages")
         print("  om     - Open a message conversation (om <conversation_id>)")
+        print("  share  - Share a file or directory (share <path>)")
+        print("  files  - List shared files")
+        print("  access - Manage access to shared resources (access <id> <user> [add|rm])")
+        print("  all    - Share resource with everyone (all <id> [on|off])")
         print("  sc     - Share clipboard (sc <username_1> <username_2> ...)")
         print("  rc     - Receive clipboard from peers (rc <username_1> <username_2> ...)")
         print("  debug  - Toggle debug mode")

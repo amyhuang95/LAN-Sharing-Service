@@ -23,7 +23,11 @@ class Config:
         """
         self.debug = False
         self.debug_messages = []
-        self.config_file = Path.home() / '.lanshare.conf'
+        
+        # Store the config in the lanshared folder (temporary)
+        self.shared_dir = Path.cwd() / 'lanshared'
+        self.config_file = self.shared_dir / '.lanshare.conf'
+        
         self.max_debug_messages = 100
         self.port = 12345  # Single port for all UDP communication
         self.clipboard_port = 12346
@@ -44,6 +48,9 @@ class Config:
     def save_config(self):
         """Saves the current configuration settings to the config file."""
         try:
+            # Make sure the directory exists
+            self.config_file.parent.mkdir(exist_ok=True)
+            
             with open(self.config_file, 'w') as f:
                 json.dump({'debug': self.debug}, f)
         except Exception as e:
