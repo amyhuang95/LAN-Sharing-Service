@@ -29,9 +29,9 @@ pip install -r requirements.txt
 
 ### Create a User with `username`
 ---
-Create a user with `username = evan-dayy`.
+Create a user with `username = evan-dayy`. Add --share_clipboard or -sc flag to activate clipboard sharing feature.
 ```sh
-python create.py create --username <USERNAME>
+python create.py create --username <USERNAME> [-sc]
 ```
 
 Access to the LAN Terminal command;
@@ -46,6 +46,12 @@ Available commands:
   msg    - Send a message (msg <username>)
   lm     - List all messages
   om     - Open a message conversation (om <conversation_id>)
+  share  - Share a file or directory (share <path>)
+  files  - List shared files
+  access - Manage access to shared resources (access <id> <user> [add|rm])
+  all    - Share resource with everyone (all <id> [on|off])
+  sc     - Share clipboard (sc <username_1> <username_2> ...)
+  rc     - Receive clipboard from peers (rc <username_1> <username_2> ...)
   debug  - Toggle debug mode
   clear  - Clear screen
   help   - Show this help message
@@ -53,6 +59,22 @@ Available commands:
 evan-dayy#81b6@LAN(192.168.4.141)#
 
 ```
+
+#### Note
+* To enable two way exchange of clipboard content, peers needs to add each other to their sending and receiving lists with `sc` and `rc` commands. For example, if Peer1 and Peer2 want to exchange clipboard data:
+
+  Peer1 needs to run:
+  ```
+  sc Peer2
+  rc Peer2
+  ```
+
+  Peer2 needs to run:
+  ```
+  sc Peer1
+  rc Peer1
+  ```
+  With this setup, when Peer1 copies some text, Peer2 will be able to paste right away. Same for the opposite direction. 
 
 ### Demo
 ---
