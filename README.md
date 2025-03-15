@@ -1,8 +1,7 @@
 # LAN Sharing Service
 A local-area-network (LAN) sharing service that shares files and clipboards across different devices in local area network, essientially, it means transferring files directly between devices on the same network without going through the internet. 
 
-### CUJ
----
+## CUJ
 - *CUJ#1:* sub LAN with access code;
 - *CUJ#2:* peer discoveries (in LAN and sub-LAN);
 - *CUJ#3:* access level (secured mode, admin, visitor, ...);
@@ -11,8 +10,7 @@ A local-area-network (LAN) sharing service that shares files and clipboards acro
 - *CUJ#6:* streaming across LAN;
 - *CUJ#7:* backup and restore;
 
-### Prerequisite
----
+## Prerequisite
 First, make a new folder and clone the repo:
 ```sh
 mkdir lanss && cd lanss
@@ -27,14 +25,12 @@ pip install -r requirements.txt
 ```
 **Notes: Make sure all the device are in the same LAN to discover your peers.**
 
-### Create a User with `username`
----
-Create a user with `username = evan-dayy`. Add --share_clipboard or -sc flag to activate clipboard sharing feature.
+## Start
+Create a user with `username = evan-dayy`. Add `--share_clipboard` or `-sc` flag to activate clipboard sharing feature.
 ```sh
 python create.py create --username <USERNAME> [-sc]
 ```
-
-Access to the LAN Terminal command;
+Type `help` to see the LAN Terminal command;
 ```
 
 Welcome to LAN Share, evan-dayy#81b6!
@@ -76,16 +72,102 @@ evan-dayy#81b6@LAN(192.168.4.141)#
   ```
   With this setup, when Peer1 copies some text, Peer2 will be able to paste right away. Same for the opposite direction. 
 
-### Demo
----
-#### Video (iter1) 
+## Demo
+### Video (iter1) 
 
 https://github.com/user-attachments/assets/549d37ee-d8e8-4d7f-b6bb-4cc80f819626
 
-
-#### Video (iter2) 
+### Video (iter2) 
 
 
 https://github.com/user-attachments/assets/3b515191-a86d-436f-904b-736dbc586298
 
 
+## Iter2 File Sharing Commands
+
+These commands show all the basic usages on how to share a file or directory with a peer, however, there are some important features doesn't show here, here are the summary we provide on file sharing features:
+- Share a file or directory to everyone;
+- Almost all types of files - including pdf, scripts, pictures, even videos
+- Give/Remove certain user an access to a file or directory;
+- **Auto-sync**: The update in the host file or directory will be synced to peers;
+- Access Provision & Deletion during new peers emerge or quit;
+- An Interactive UI to easily interact with the files sharing;
+
+### Share `share <path to a [file|directory]>`
+```
+evan-dayy#07a8@LAN(192.168.4.141)# share ~/Desktop/samwise
+evan-dayy#07a8@LAN(192.168.4.141)# share ./create.py
+```
+- You can share any file (including video or images) or directory (including recusive directory) by using this command;
+- The path can be any format - including relative path or absolute path;
+- All shared file will be stored in a the home directory folder called shared, and each peer should has its own shared folder.
+```
+lanshare
+    |____shared
+            |____evan-dayy#07a8
+            |____jennifer#24fs
+            |____(other peers shared files)
+```
+
+### Show all shared files `files`
+```
+evan-dayy#07a8@LAN(192.168.4.141)# files
+```
+![Local Image](assets/files.png)
+
+- There are some sub-commands listed in the view, press `e` to in this view to quickly give acccess to everyone;
+![Local Image](assets/files2.png)
+
+
+### Regular Access Command `access <resource_id> <user_id> [add|rm]` 
+```
+evan-dayy#07a8@LAN(192.168.4.141)# access samwise_id jennifer#24s7 add
+Successfully added to access list for jennifer#24s7
+evan-dayy#07a8@LAN(192.168.4.141)# access samwsize_id jennifer#24s7 rm
+Successfully removed from access list for jennifer#24s7
+```
+- Give access to a particular user; 
+
+## Iter1 Basic Commands - Peer Discovery & Message
+### User List `ul`
+By running `ul`, you will see a list of active user.
+
+- pre-requisite: Create a user in another device called `jennifer`.
+ 
+```
+evan-dayy#81b6@LAN(192.168.4.141)# ul
+```
+![Local Image](assets/user_list.png)
+
+
+### Debug View `debug`
+
+To easily track the received and sent packets, we explicitly design the `debug view` to monitor the traffic. This also give us convenience when we implement other service for later iterations.
+
+```
+evan-dayy#81b6@LAN(192.168.4.141)# debug
+```
+![Local Image](assets/debug_view.png)
+
+
+### Message View `om`, `lm`, `msg`
+Let's text to Jennifer:
+```
+evan-dayy#81b6@LAN(192.168.4.141)# msg jennifer#2e69
+```
+![Local Image](assets/message_u1.png)
+
+From Jennifer point of view to list message `lm`:
+```
+jennifer#2e69@LAN(192.168.4.34)# lm
+```
+![Local Image](assets/message_u2.png)
+
+From Jennifer point of view to open message `om` and reply:
+```
+jennifer#2e69@LAN(192.168.4.34)# om 0f033
+```
+![Local Image](assets/message_u3.png)
+
+From Evan point of view:
+![Local Image](assets/message_u4.png)
