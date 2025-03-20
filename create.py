@@ -14,11 +14,18 @@ import atexit
 from pathlib import Path
 import sys
 import signal
+import logging
 
 from lanshare.config.settings import Config
 from lanshare.core.udp_discovery import UDPPeerDiscovery
 from lanshare.core.clipboard import Clipboard
 from lanshare.ui.session import InteractiveSession
+
+# Configure logging to suppress pyftpdlib messages
+logging.basicConfig(level=logging.ERROR)
+for logger_name in ['pyftpdlib', 'pyftpdlib.server', 'pyftpdlib.handler', 
+                    'pyftpdlib.authorizer', 'pyftpdlib.filesystems']:
+    logging.getLogger(logger_name).setLevel(logging.CRITICAL)
 
 def generate_user_id(username: str) -> str:
     """Generates a short random ID for the user.
@@ -54,19 +61,37 @@ def cleanup_lanshare_folder():
         except Exception as e:
             print(f"Error cleaning up folder: {e}")
 
+# Global reference to discovery service for cleanup
+discovery_service = None
+
+def graceful_shutdown():
+    """Perform a graceful shutdown of all services."""
+    global discovery_service
+    if discovery_service:
+        try:
+            # Properly shut down the discovery service (which includes FTP server)
+            discovery_service.cleanup()
+        except Exception:
+            pass  # Suppress any shutdown errors
+    
+    # Now clean up the folder
+    cleanup_lanshare_folder()
+
 def signal_handler(sig, frame):
     """Handle keyboard interrupts and other signals."""
-    print("Received exit signal. Cleaning up...")
-    cleanup_lanshare_folder()
+    print("\nReceived exit signal. Cleaning up...")
+    graceful_shutdown()
     sys.exit(0)
 
 def main():
+    global discovery_service
+    
     # Set up signal handlers for cleaner exit
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
     
     # Register the cleanup function to run when the program exits normally
-    atexit.register(cleanup_lanshare_folder)
+    atexit.register(graceful_shutdown)
     
     # Create the shared folder
     create_lanshare_folder()
@@ -88,22 +113,29 @@ def main():
         
         # Start the service
         config = Config()
-        discovery = UDPPeerDiscovery(username_with_id, config)
-        discovery.start()
+        discovery_service = UDPPeerDiscovery(username_with_id, config)
+        discovery_service.start()
 
         # Start clipboard sharing service (default off unless user enables it with command line args)
-        clipboard = Clipboard(discovery, config, args.share_clip)
+        clipboard = Clipboard(discovery_service, config, args.share_clip)
         clipboard.start()
         
         # Start terminal UI
-        session = InteractiveSession(discovery, clipboard)
+        session = InteractiveSession(discovery_service, clipboard)
         try:
+            # Redirect stderr to suppress pyftpdlib error messages
+            original_stderr = sys.stderr
+            devnull = open(os.devnull, 'w')
+            sys.stderr = devnull
+            
             session.start()
+            
+            # Restore stderr
+            sys.stderr = original_stderr
+            devnull.close()
         except KeyboardInterrupt:
             print("\nExiting application...")
-        finally:
-            # Make sure to clean up even if there's an exception
-            discovery.cleanup()
 
 if __name__ == "__main__":
+    import os  # Add this import at the top if not already there
     main()
