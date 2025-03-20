@@ -15,6 +15,8 @@ from pathlib import Path
 import sys
 import signal
 import logging
+import os
+import threading
 
 from lanshare.config.settings import Config
 from lanshare.core.udp_discovery import UDPPeerDiscovery
@@ -26,6 +28,15 @@ logging.basicConfig(level=logging.ERROR)
 for logger_name in ['pyftpdlib', 'pyftpdlib.server', 'pyftpdlib.handler', 
                     'pyftpdlib.authorizer', 'pyftpdlib.filesystems']:
     logging.getLogger(logger_name).setLevel(logging.CRITICAL)
+
+# Override the default sys.excepthook to suppress errors during exit
+def silent_excepthook(exc_type, exc_value, exc_traceback):
+    # Only show exceptions during normal operation, not during exit
+    if not sys._getframe(1).f_code.co_name == 'graceful_shutdown':
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+
+# Set the silent excepthook
+sys.excepthook = silent_excepthook
 
 def generate_user_id(username: str) -> str:
     """Generates a short random ID for the user.
@@ -122,20 +133,35 @@ def main():
         
         # Start terminal UI
         session = InteractiveSession(discovery_service, clipboard)
+        
+        # Completely suppress stderr and stdout for clean exit
+        class DevNull:
+            def write(self, msg):
+                pass
+            def flush(self):
+                pass
+        
+        # Save original stderr/stdout
+        original_stderr = sys.stderr
+        original_stdout = sys.stdout
+        
         try:
-            # Redirect stderr to suppress pyftpdlib error messages
-            original_stderr = sys.stderr
+            # Suppress pyftpdlib error messages during normal operation
             devnull = open(os.devnull, 'w')
             sys.stderr = devnull
             
             session.start()
             
-            # Restore stderr
-            sys.stderr = original_stderr
-            devnull.close()
         except KeyboardInterrupt:
-            print("\nExiting application...")
+            # On keyboard interrupt, suppress all output
+            print("\nExiting application...", flush=True)
+            
+            # Immediately redirect both stderr and stdout to suppress exit messages
+            sys.stderr = DevNull()
+            sys.stdout = DevNull()
+            
+            # Also suppress threading excepthook errors
+            threading.excepthook = lambda *args: None
 
 if __name__ == "__main__":
-    import os  # Add this import at the top if not already there
     main()
