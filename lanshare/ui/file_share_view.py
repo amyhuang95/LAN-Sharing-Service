@@ -34,6 +34,7 @@ class FileShareView:
         self.status_history = []  # Store important messages
         self.selected_index = 0
         self.resources = []
+        self.command_mode = "main"  # Start in main mode
         
         # Setup key bindings and styles
         self._setup_keybindings()
@@ -42,103 +43,94 @@ class FileShareView:
     def _setup_keybindings(self):
         """Setup keyboard shortcuts"""
         self.kb = KeyBindings()
-
-        @self.kb.add('q')
-        def _(event):
-            """Exit on 'q'"""
-            self.running = False
-            event.app.exit()
-        
-        @self.kb.add('s')
-        def _(event):
-            """Share a new file or directory"""
-            event.app.layout.focus(self.command_window)
-            self.status_text = "Share mode: Enter the path to share (press Enter when done)"
-            self.command_mode = "share"
-            event.app.invalidate()
-        
-        @self.kb.add('a')
-        def _(event):
-            """Add access for a user"""
-            if not self.resources:
-                self.status_text = "No resources available to modify access"
-                self._add_to_status_history("No resources available to modify access")
-                event.app.invalidate()
-                return
-                
-            resource = self.resources[self.selected_index]
-            if resource.owner != self.discovery.username:
-                self.status_text = "You can only modify access for resources you own"
-                self._add_to_status_history("You can only modify access for resources you own")
-                event.app.invalidate()
-                return
-                
-            event.app.layout.focus(self.command_window)
-            self.status_text = f"Add access: Enter username to grant access to resource {resource.id}"
-            self.command_mode = "add_access"
-            event.app.invalidate()
-        
-        @self.kb.add('r')
-        def _(event):
-            """Remove access for a user"""
-            if not self.resources:
-                self.status_text = "No resources available to modify access"
-                self._add_to_status_history("No resources available to modify access")
-                event.app.invalidate()
-                return
-                
-            resource = self.resources[self.selected_index]
-            if resource.owner != self.discovery.username:
-                self.status_text = "You can only modify access for resources you own"
-                self._add_to_status_history("You can only modify access for resources you own")
-                event.app.invalidate()
-                return
-                
-            event.app.layout.focus(self.command_window)
-            self.status_text = f"Remove access: Enter username to remove access from resource {resource.id[:8]}"
-            self.command_mode = "remove_access"
-            event.app.invalidate()
-        
-        @self.kb.add('e')
-        def _(event):
-            """Share with everyone"""
-            if not self.resources:
-                self.status_text = "No resources available to modify access"
-                self._add_to_status_history("No resources available to modify access")
-                event.app.invalidate()
-                return
-                
-            resource = self.resources[self.selected_index]
-            if resource.owner != self.discovery.username:
-                self.status_text = "You can only modify access for resources you own"
-                self._add_to_status_history("You can only modify access for resources you own")
-                event.app.invalidate()
-                return
-            
-            self._share_with_all(resource.id, not resource.shared_to_all)
-            event.app.invalidate()
         
         @self.kb.add('up')
         def _(event):
             """Move selection up"""
-            if self.resources:
+            if self.resources and self.command_mode == "main":
                 self.selected_index = max(0, self.selected_index - 1)
                 event.app.invalidate()
         
         @self.kb.add('down')
         def _(event):
             """Move selection down"""
-            if self.resources:
+            if self.resources and self.command_mode == "main":
                 self.selected_index = min(len(self.resources) - 1, self.selected_index + 1)
                 event.app.invalidate()
         
         @self.kb.add('enter')
         def _(event):
             """Process command input"""
-            if event.app.layout.has_focus(self.command_window):
-                self._process_command(self.command_buffer.text)
-                self.command_buffer.text = ""
-                event.app.layout.focus(self.main_window)
+            command = self.command_buffer.text.strip().lower()
+            
+            if self.command_mode == "main":
+                # Process commands in main mode
+                if command == "q" or command == "quit" or command == "exit":
+                    self.running = False
+                    event.app.exit()
+                elif command == "s" or command == "share":
+                    self.status_text = "Share mode: Enter the path to share (press Enter when done)"
+                    self.command_mode = "share"
+                    self.command_buffer.text = ""  # Clear input
+                    event.app.invalidate()
+                elif command == "a" or command == "add":
+                    if not self.resources:
+                        self.status_text = "No resources available to modify access"
+                        self._add_to_status_history("No resources available to modify access")
+                    else:
+                        resource = self.resources[self.selected_index]
+                        if resource.owner != self.discovery.username:
+                            self.status_text = "You can only modify access for resources you own"
+                            self._add_to_status_history("You can only modify access for resources you own")
+                        else:
+                            self.status_text = f"Add access: Enter username to grant access to resource {resource.id[:8]}"
+                            self.command_mode = "add_access"
+                            self.command_buffer.text = ""  # Clear input
+                    event.app.invalidate()
+                elif command == "r" or command == "remove":
+                    if not self.resources:
+                        self.status_text = "No resources available to modify access"
+                        self._add_to_status_history("No resources available to modify access")
+                    else:
+                        resource = self.resources[self.selected_index]
+                        if resource.owner != self.discovery.username:
+                            self.status_text = "You can only modify access for resources you own"
+                            self._add_to_status_history("You can only modify access for resources you own")
+                        else:
+                            self.status_text = f"Remove access: Enter username to remove access from resource {resource.id[:8]}"
+                            self.command_mode = "remove_access"
+                            self.command_buffer.text = ""  # Clear input
+                    event.app.invalidate()
+                elif command == "e" or command == "everyone":
+                    if not self.resources:
+                        self.status_text = "No resources available to modify access"
+                        self._add_to_status_history("No resources available to modify access")
+                    else:
+                        resource = self.resources[self.selected_index]
+                        if resource.owner != self.discovery.username:
+                            self.status_text = "You can only modify access for resources you own"
+                            self._add_to_status_history("You can only modify access for resources you own")
+                        else:
+                            self._share_with_all(resource.id, not resource.shared_to_all)
+                    self.command_buffer.text = ""  # Clear input
+                    event.app.invalidate()
+                elif command == "help":
+                    self.status_text = "Available commands: [s]hare, [a]dd, [r]emove, [e]veryone, [q]uit, help"
+                    self._add_to_status_history("Command help displayed")
+                    self.command_buffer.text = ""  # Clear input
+                    event.app.invalidate()
+                else:
+                    # If the command is not recognized in main mode, show a message
+                    if command:
+                        self.status_text = f"Unknown command: {command}. Type 'help' for available commands."
+                        self.command_buffer.text = ""  # Clear input
+                        event.app.invalidate()
+            else:
+                # Process commands in other modes
+                input_text = self.command_buffer.text  # Save the input text
+                self.command_buffer.text = ""  # Clear input immediately
+                self._process_command(input_text)  # Use the saved text
+                self.command_mode = "main"
                 event.app.invalidate()
     
     def _setup_styles(self):
@@ -251,11 +243,22 @@ class FileShareView:
             ("", "  "),
             ("class:border", "╰" + "─" * 110 + "╯"),  # Increased width to 110
             ("", "\n\n"),
-            ("class:help", "  Commands:\n"),
-            ("class:help", "    [s] Share file/directory   [a] Add user access    [r] Remove user access\n"),
-            ("class:help", "    [e] Toggle share with everyone    [↑/↓] Navigate    [q] Exit\n\n"),
-            ("class:status", f"  {self.status_text if self.status_text else ''}\n")
+            ("class:help", "  Commands (type and press Enter):\n"),
+            ("class:help", "    [s] or [share] Share file/directory   [a] or [add] Add user access    [r] or [remove] Remove user access\n"),
+            ("class:help", "    [e] or [everyone] Toggle share with everyone    [↑/↓] Navigate    [q] or [quit] Exit    [help] Show commands\n\n"),
+            ("class:status", f"  {self.status_text if self.status_text else ''}\n"),
+            ("class:help", f"  Current mode: {self.command_mode.upper() if self.command_mode != 'main' else 'COMMAND'}\n")
         ])
+        
+        # Display command prompt based on mode
+        if self.command_mode == "main":
+            text.append(("class:help", "  Enter command: "))
+        elif self.command_mode == "share":
+            text.append(("class:help", "  Enter path to share: "))
+        elif self.command_mode == "add_access":
+            text.append(("class:help", "  Enter username to add: "))
+        elif self.command_mode == "remove_access":
+            text.append(("class:help", "  Enter username to remove: "))
         
         # Add status history section
         if self.status_history:
@@ -387,8 +390,9 @@ class FileShareView:
     def show(self):
         """Show the file sharing view"""
         self.discovery.in_live_view = True
-        self.command_mode = None
-        self.status_text = ""
+        self.command_mode = "main"
+        self.status_text = "Type a command and press Enter. Type 'help' for available commands."
+        self._add_to_status_history("File sharing view started")
         
         # Configure the FTP server to be less verbose if possible
         self._configure_ftp_logging()
@@ -419,8 +423,8 @@ class FileShareView:
             ])
         )
         
-        # Start with main window focused
-        layout.focus(self.main_window)
+        # Start with command window focused
+        layout.focus(self.command_window)
         
         # Create application
         app = Application(
