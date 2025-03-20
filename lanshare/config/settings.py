@@ -25,8 +25,7 @@ class Config:
         self.debug_messages = []
         
         # Store the config in the lanshared folder (temporary)
-        self.shared_dir = Path.cwd() / 'lanshared'
-        self.config_file = self.shared_dir / '.lanshare.conf'
+        self.config_file = Path.cwd() / '.lanshare.conf'
         
         self.max_debug_messages = 100
         self.port = 12345  # Single port for all UDP communication

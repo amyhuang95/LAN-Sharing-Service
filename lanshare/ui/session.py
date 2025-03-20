@@ -6,6 +6,13 @@ from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.shortcuts import clear
 import os
 from datetime import datetime
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
+from rich import box
+from rich.theme import Theme
+from rich.markdown import Markdown
 
 from .debug_view import DebugView
 from .user_list_view import UserListView
@@ -24,6 +31,20 @@ class InteractiveSession:
         self.clipboard = clipboard
         # Direct access to the file share manager
         self.file_share_manager = discovery.file_share_manager
+        
+        # Initialize Rich console with custom theme
+        self.theme = Theme({
+            "info": "cyan",
+            "warning": "yellow",
+            "danger": "bold red",
+            "success": "bold green",
+            "command": "bold blue",
+            "highlight": "magenta",
+            "username": "green",
+            "ip": "blue",
+            "resource_id": "magenta",
+        })
+        self.console = Console(theme=self.theme)
         
         self.commands = {
             'ul': self._show_user_list,
@@ -75,13 +96,15 @@ class InteractiveSession:
     def _send_message(self, *args):
         """Handle the msg command"""
         if not args:
-            print("Usage: msg <username>")
+            self.console.print(Panel("[warning]Usage: msg <username>", 
+                                     title="Command Help", 
+                                     border_style="yellow"))
             return
 
         recipient = args[0]
         peers = self.discovery.list_peers()
         if recipient not in peers:
-            print(f"Error: User '{recipient}' not found or offline")
+            self.console.print(f"[danger]Error:[/] User '[highlight]{recipient}[/]' not found or offline")
             return
 
         send_new_message(self.discovery, recipient)
@@ -94,13 +117,15 @@ class InteractiveSession:
     def _open_message(self, *args):
         """Handle the om command"""
         if not args:
-            print("Usage: om <conversation_id>")
+            self.console.print(Panel("[warning]Usage: om <conversation_id>", 
+                                     title="Command Help", 
+                                     border_style="yellow"))
             return
 
         conversation_id = args[0]
         messages = self.discovery.get_conversation(conversation_id)
         if not messages:
-            print(f"No conversation found with ID: {conversation_id}")
+            self.console.print(f"[warning]No conversation found with ID: [highlight]{conversation_id}")
             return
 
         # Get the other participant from the conversation
@@ -114,20 +139,18 @@ class InteractiveSession:
         view.show_conversation(other_party, conversation_id)
     
     def _share_file(self, *args):
-        """Handle the share command to share a file or directory.
-        
-        Args:
-            *args: Command arguments
-        """
+        """Handle the share command to share a file or directory."""
         if not args:
-            print("Usage: share <file_path> or <directory_path>")
+            self.console.print(Panel("[warning]Usage: share <file_path> or <directory_path>", 
+                                     title="Command Help", 
+                                     border_style="yellow"))
             return
             
         path = " ".join(args)  # Handle paths with spaces
         path = os.path.expanduser(path)  # Expand user paths like ~ and ~user
         
         if not os.path.exists(path):
-            print(f"Error: Path not found: {path}")
+            self.console.print(f"[danger]Error:[/] Path not found: [highlight]{path}")
             return
             
         # Direct call to file_share_manager instead of through discovery
@@ -135,31 +158,32 @@ class InteractiveSession:
         
         if resource:
             resource_type = "directory" if resource.is_directory else "file"
-            print(f"Successfully shared {resource_type}: {path}")
-            print(f"Resource ID: {resource.id}")
-            print("By default, only you can access this resource.")
-            print("Use 'access <resource_id> <username> add' to give access to others.")
-            print("Or use 'all <resource_id> on' to share with everyone.")
+            
+            # Create a nice panel for success message
+            info_text = f"""Successfully shared {resource_type}: [highlight]{path}[/]
+Resource ID: [resource_id]{resource.id}[/]
+            
+By default, only you can access this resource.
+Use [command]access <resource_id> <username> add[/] to give access to others.
+Or use [command]all <resource_id> on[/] to share with everyone."""
+            
+            self.console.print(Panel(info_text, 
+                                     title="[success]✓ Share Successful", 
+                                     border_style="green"))
         else:
-            print(f"Error: Failed to share {path}")
+            self.console.print(f"[danger]Error:[/] Failed to share [highlight]{path}")
     
     def _list_files(self, *args):
-        """Handle the files command to list shared files.
-        
-        Args:
-            *args: Command arguments
-        """
+        """Handle the files command to list shared files."""
         view = FileShareView(self.discovery)
         view.show()
     
     def _manage_access(self, *args):
-        """Handle the access command to manage access to shared resources.
-        
-        Args:
-            *args: Command arguments
-        """
+        """Handle the access command to manage access to shared resources."""
         if len(args) < 3:
-            print("Usage: access <resource_id> <username> [add|rm]")
+            self.console.print(Panel("[warning]Usage: access <resource_id> <username> add|rm", 
+                                     title="Command Help", 
+                                     border_style="yellow"))
             return
             
         resource_id = args[0]
@@ -167,7 +191,7 @@ class InteractiveSession:
         action = args[2].lower()
         
         if action not in ["add", "rm"]:
-            print("Action must be 'add' or 'rm'")
+            self.console.print("[warning]Action must be 'add' or 'rm'")
             return
             
         # Direct call to file_share_manager instead of through discovery
@@ -179,22 +203,28 @@ class InteractiveSession:
         
         if result:
             action_text = "added to" if action == "add" else "removed from"
-            print(f"Successfully {action_text} access list for {username}")
+            self.console.print(f"[success]✓ Successfully {action_text} access list for [username]{username}[/]")
         else:
-            print(f"Error: Failed to update access. Check that you own the resource and the resource ID is correct.")
+            self.console.print(Panel("[danger]Failed to update access. Check that you own the resource and the resource ID is correct.", 
+                                     title="Access Error", 
+                                     border_style="red"))
     
     def _share_with_all(self, *args):
-        """Handle the all command to share with everyone.
-        
-        Args:
-            *args: Command arguments
-        """
+        """Handle the all command to share with everyone."""
         if len(args) < 2:
-            print("Usage: all <resource_id> [on|off]")
+            self.console.print(Panel("[warning]Usage: all <resource_id> on|off", 
+                                     title="Command Help", 
+                                     border_style="yellow"))
             return
             
         resource_id = args[0]
-        share_all = args[1].lower() == "on"
+        share_option = args[1].lower()
+        
+        if share_option not in ["on", "off"]:
+            self.console.print("[warning]Option must be 'on' or 'off'")
+            return
+            
+        share_all = share_option == "on"
         
         # Direct call to file_share_manager instead of through discovery
         result = self.file_share_manager.set_share_to_all(
@@ -204,18 +234,24 @@ class InteractiveSession:
         
         if result:
             status = "shared with everyone" if share_all else "no longer shared with everyone"
-            print(f"Resource is now {status}")
+            self.console.print(f"[success]✓ Resource is now {status}")
         else:
-            print("Error: Failed to update sharing settings. Check that you own the resource and the resource ID is correct.")
+            self.console.print(Panel("[danger]Failed to update sharing settings. Check that you own the resource and the resource ID is correct.", 
+                                     title="Sharing Error", 
+                                     border_style="red"))
 
     def _share_clipboard(self, *args):
         """Handle the sc command"""
         if not args:
-            print("Usage: sc <username_1> <username_2> ...")
+            self.console.print(Panel("[warning]Usage: sc <username_1> <username_2> ...", 
+                                     title="Command Help", 
+                                     border_style="yellow"))
             return
 
         if not self.clipboard.activate:
-            print("Clipboard sharing is not activated. Restart the application with -sc flag for activation.")
+            self.console.print(Panel("[warning]Clipboard sharing is not activated.\nRestart the application with -sc flag for activation.", 
+                                     title="Feature Not Enabled", 
+                                     border_style="yellow"))
             return
 
         recipients = args
@@ -223,25 +259,36 @@ class InteractiveSession:
 
         # Check at least one requested recipient is online
         at_least_one_online = False
+        offline_users = []
         for recipient in recipients:
             if recipient in active_peers:
                 at_least_one_online = True
             else:
-                print(f"User '{recipient}' not found or offline")
+                offline_users.append(recipient)
+                
+        if offline_users:
+            self.console.print(f"[warning]Users not found or offline: [highlight]{', '.join(offline_users)}")
+            
         if not at_least_one_online:
-            print("None of the provided peers is online")
+            self.console.print("[danger]None of the provided peers is online")
             return
 
         self.clipboard.update_send_to_peers(recipients)
+        online_recipients = [r for r in recipients if r in active_peers]
+        self.console.print(f"[success]✓ Now sharing clipboard with: [username]{', '.join(online_recipients)}")
     
     def _receive_clipboard(self, *args):
         """Handle the rc command"""
         if not args:
-            print("Usage: rc <username_1> <username_2> ...")
+            self.console.print(Panel("[warning]Usage: rc <username_1> <username_2> ...", 
+                                     title="Command Help", 
+                                     border_style="yellow"))
             return
 
         if not self.clipboard.activate:
-            print("Clipboard sharing is not activated. Restart the application with -sc flag for activation.")
+            self.console.print(Panel("[warning]Clipboard sharing is not activated.\nRestart the application with -sc flag for activation.", 
+                                     title="Feature Not Enabled", 
+                                     border_style="yellow"))
             return
         
         senders = args
@@ -249,34 +296,49 @@ class InteractiveSession:
 
         # Check at least one requested sender is online
         at_least_one_online = False
+        offline_users = []
         for sender in senders:
             if sender in active_peers:
                 at_least_one_online = True
             else:
-                print(f"User '{sender}' not found or offline")
+                offline_users.append(sender)
+                
+        if offline_users:
+            self.console.print(f"[warning]Users not found or offline: [highlight]{', '.join(offline_users)}")
+            
         if not at_least_one_online:
-            print("None of the provided peers is online")
+            self.console.print("[danger]None of the provided peers is online")
             return
 
         self.clipboard.update_receive_from_peers(senders)
+        online_senders = [s for s in senders if s in active_peers]
+        self.console.print(f"[success]✓ Now receiving clipboard from: [username]{', '.join(online_senders)}")
 
     def show_help(self, *args):
         """Show help message"""
-        print("\nAvailable commands:")
-        print("  ul     - List online users")
-        print("  msg    - Send a message (msg <username>)")
-        print("  lm     - List all messages")
-        print("  om     - Open a message conversation (om <conversation_id>)")
-        print("  share  - Share a file or directory (share <path>)")
-        print("  files  - List shared files")
-        print("  access - Manage access to shared resources (access <id> <user> [add|rm])")
-        print("  all    - Share resource with everyone (all <id> [on|off])")
-        print("  sc     - Share clipboard (sc <username_1> <username_2> ...)")
-        print("  rc     - Receive clipboard from peers (rc <username_1> <username_2> ...)")
-        print("  debug  - Toggle debug mode")
-        print("  clear  - Clear screen")
-        print("  help   - Show this help message")
-        print("  exit   - Exit the session")
+        help_table = Table(box=box.ROUNDED, show_header=True, header_style="bold cyan")
+        help_table.add_column("Command", style="command")
+        help_table.add_column("Description")
+        help_table.add_column("Usage Example", style="dim")
+        
+        # Add commands to the table
+        help_table.add_row("ul", "List online users", "ul")
+        help_table.add_row("msg", "Send a message to a user", "msg username")
+        help_table.add_row("lm", "List all message conversations", "lm")
+        help_table.add_row("om", "Open a specific conversation", "om conv_id")
+        help_table.add_row("share", "Share a file or directory", "share ~/Documents/file.txt")
+        help_table.add_row("files", "List and manage shared files", "files")
+        help_table.add_row("access", "Manage access to shared resources", "access resource_id username add|rm")
+        help_table.add_row("all", "Share resource with everyone", "all resource_id on|off")
+        help_table.add_row("sc", "Share clipboard with peers", "sc username1 username2")
+        help_table.add_row("rc", "Receive clipboard from peers", "rc username1 username2")
+        help_table.add_row("debug", "Toggle debug mode", "debug")
+        help_table.add_row("clear", "Clear screen", "clear")
+        help_table.add_row("help", "Show this help message", "help")
+        help_table.add_row("exit/quit", "Exit the application", "exit")
+        
+        self.console.print(Panel.fit(help_table, title="[bold]LAN Share Command Reference", 
+                                    border_style="cyan"))
 
     def clear_screen(self, *args):
         """Clear the terminal screen"""
@@ -284,6 +346,22 @@ class InteractiveSession:
 
     def exit_session(self, *args):
         """Exit the session"""
+        # Display a goodbye message
+        farewell = Text()
+        farewell.append("\nThank you for using ", style="cyan")
+        farewell.append("LAN Share", style="bold green")
+        farewell.append("!\n", style="cyan")
+        farewell.append("Your shared resources have been cleaned up.\n", style="green")
+        farewell.append("Have a great day!", style="cyan bold")
+        
+        farewell_panel = Panel(
+            farewell,
+            title="[bold]Goodbye",
+            border_style="cyan",
+            box=box.ROUNDED
+        )
+        
+        self.console.print(farewell_panel)
         self.running = False
         return True
 
@@ -319,26 +397,48 @@ class InteractiveSession:
         if command in self.commands:
             return self.commands[command](*args)
         else:
-            print(f"Unknown command: {command}")
-            print("Type 'help' for available commands")
+            self.console.print(f"[danger]Unknown command:[/] [highlight]{command}")
+            self.console.print("Type [command]help[/] for available commands")
             return False
 
     def start(self):
         """Start the interactive session"""
         clear()
-        print(f"\nWelcome to LAN Share, {self.discovery.username}!")
-        print("Type 'help' for available commands")
+        
+        # Create fancy welcome panel
+        welcome_text = Text()
+        welcome_text.append("Welcome to ", style="cyan")
+        welcome_text.append("LAN Share", style="bold green")
+        welcome_text.append(f", {self.discovery.username}!\n\n", style="cyan")
+        welcome_text.append("• Share files and directories on your local network\n", style="green")
+        welcome_text.append("• Chat with other users on the same network\n", style="green")
+        welcome_text.append("• Share clipboard contents securely\n\n", style="green")
+        welcome_text.append("Type ", style="cyan")
+        welcome_text.append("help", style="bold blue")
+        welcome_text.append(" for available commands", style="cyan")
+        
+        welcome_panel = Panel(
+            welcome_text,
+            title="[bold]LAN Share Service",
+            subtitle=f"Connected as [bold green]{self.discovery.username}[/]",
+            border_style="cyan",
+            box=box.DOUBLE
+        )
+        
+        self.console.print(welcome_panel)
         
         while self.running:
             try:
                 command = self.session.prompt(self.get_prompt_text())
                 self.handle_command(command)
             except KeyboardInterrupt:
-                print("\nUse 'exit' to quit")
+                self.console.print("\n[warning]Use '[command]exit[/]' to quit")
             except EOFError:
+                # Show goodbye message on Ctrl+D
+                self.exit_session()
                 break
             except Exception as e:
-                print(f"Error: {e}")
+                self.console.print(f"[danger]Error:[/] {e}")
 
         # Cleanup
         self.discovery.cleanup()
