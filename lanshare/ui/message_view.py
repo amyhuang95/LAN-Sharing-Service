@@ -1,16 +1,20 @@
-from prompt_toolkit.application import Application
-from prompt_toolkit.layout.containers import Window, HSplit, ScrollOffsets
-from prompt_toolkit.layout.controls import FormattedTextControl, BufferControl
-from prompt_toolkit.layout.layout import Layout
-from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.buffer import Buffer
-from prompt_toolkit.styles import Style
-from prompt_toolkit.shortcuts import clear
+from rich.console import Console
+from rich.panel import Panel
+from rich.layout import Layout
+from rich.text import Text
+from rich.box import ROUNDED, HEAVY, DOUBLE
+from rich.align import Align
+from rich.prompt import Prompt
+from rich.console import Group
+from rich.table import Table
+from rich.live import Live
+from rich.style import Style
+from rich.markdown import Markdown
 from datetime import datetime
 from typing import List, Optional, Dict
 import threading
 import time
-import uuid
+import os
 
 from ..core.types import Message
 
@@ -20,72 +24,165 @@ class MessageView:
         self.recipient = recipient
         self.running = True
         self.messages: List[Message] = []
-        self.message_buffer = Buffer()
         self.last_check = datetime.now()
         self.last_message_count = 0
         self.current_conversation_id = None
         
-        # Setup components
-        self._setup_keybindings()
-        self._setup_styles()
-
-    def _setup_keybindings(self):
-        self.kb = KeyBindings()
-
-        @self.kb.add('c-c')
-        @self.kb.add('q')
-        def _(event):
-            self.running = False
-            event.app.exit()
-
-        @self.kb.add('enter')
-        def _(event):
-            if self.message_buffer.text:
-                self._send_message(self.message_buffer.text)
-                self.message_buffer.text = ""
-
-    def _setup_styles(self):
-        self.style = Style.from_dict({
-            'username': '#00aa00 bold',    # Green for current user
-            'peer': '#0000ff bold',        # Blue for other users
-            'timestamp': '#888888',        # Gray for timestamp
-            'prompt': '#ff0000',           # Red for prompt
-            'info': '#888888 italic',      # Gray italic for info
-        })
-
-    def _format_messages(self):
-        text = []
-        for msg in sorted(self.messages, key=lambda m: m.timestamp):
-            # Format timestamp
-            time_str = msg.timestamp.strftime("%H:%M:%S")
-            
-            # Choose style based on sender
-            style = 'username' if msg.sender == self.discovery.username else 'peer'
-            
-            # Format message line
-            text.extend([
-                ("class:timestamp", f"[{time_str}] "),
-                (f"class:{style}", f"{msg.sender}"),
-                ("", ": "),
-                ("", f"{msg.content}"),
-                ("", "\n")
-            ])
+        # Rich console for output
+        self.console = Console()
         
-        # Add input prompt if in direct message mode
-        if self.recipient:
-            text.extend([
-                ("", "\n"),
-                ("class:prompt", "Type your message (Enter to send, Ctrl-C to exit)> ")
-            ])
-        else:
-            text.extend([
-                ("", "\n"),
-                ("class:prompt", "Press 'q' to exit")
-            ])
+        # Message styles
+        self.style_config = {
+            'user_message': Style(color="green", bold=True),
+            'peer_message': Style(color="blue", bold=True),
+            'timestamp': Style(color="grey62"),
+            'system': Style(color="yellow", italic=True),
+            'header': Style(color="white", bold=True),
+            'divider': Style(color="grey50")
+        }
+
+    def _format_message(self, msg: Message) -> Panel:
+        """Format a single message as a Rich Panel"""
+        # Format timestamp
+        time_str = msg.timestamp.strftime("%H:%M:%S")
+        
+        # Determine if message is from current user or peer
+        is_self = msg.sender == self.discovery.username
+        
+        # Create header with sender info and timestamp
+        header = Text()
+        header.append(
+            f"{msg.sender}", 
+            style=self.style_config['user_message'] if is_self else self.style_config['peer_message']
+        )
+        header.append(f" • {time_str}", style=self.style_config['timestamp'])
+        
+        # Create message content - could support markdown here
+        content = Text(msg.content)
+        
+        # Combine into a group
+        message_group = Group(header, Text(), content)
+        
+        # Create panel with appropriate styling
+        border_style = "green" if is_self else "blue"
+        return Panel(
+            message_group,
+            box=ROUNDED,
+            border_style=border_style,
+            title="You" if is_self else msg.sender,
+            title_align="left",
+            width=None
+        )
+
+    def _format_conversation_display(self) -> Layout:
+        """Create a full conversation display layout"""
+        # Create main layout
+        layout = Layout()
+        
+        # Split into header, messages, and input areas
+        layout.split(
+            Layout(name="header", size=3),
+            Layout(name="messages"),
+            Layout(name="input", size=3)
+        )
+        
+        # Create header
+        title = f"Conversation with {self.recipient}" if self.recipient else "Conversation List"
+        header_text = Text(title, style="bold white")
+        layout["header"].update(
+            Panel(
+                Align.center(header_text),
+                box=HEAVY,
+                style="blue",
+                title="P2P Messenger",
+                title_align="center"
+            )
+        )
+        
+        # Create messages area
+        message_panels = []
+        for msg in sorted(self.messages, key=lambda m: m.timestamp):
+            message_panels.append(self._format_message(msg))
+        
+        # Add a system message if no messages yet
+        if not message_panels:
+            message_panels.append(
+                Panel(
+                    "No messages yet. Type below to start the conversation.",
+                    box=ROUNDED,
+                    style="yellow",
+                    border_style="yellow"
+                )
+            )
             
-        return text
+        # Update messages area
+        layout["messages"].update(Group(*message_panels))
+        
+        # Create input area
+        input_label = "Type your message (Ctrl+C to exit): "
+        layout["input"].update(
+            Panel(
+                Text(input_label, style="bold green"),
+                box=HEAVY,
+                style="green",
+                title="Message Input",
+                title_align="left"
+            )
+        )
+        
+        return layout
+
+    def format_conversation_list(self) -> Panel:
+        """Format the list of conversations for display"""
+        # Group messages by conversation
+        conversations: Dict[str, List[Message]] = {}
+        for msg in self.discovery.list_messages():
+            conv_id = msg.conversation_id
+            if conv_id not in conversations:
+                conversations[conv_id] = []
+            conversations[conv_id].append(msg)
+
+        # Create a table for conversations
+        table = Table(
+            box=ROUNDED,
+            expand=True,
+            show_header=True,
+            header_style="bold white on blue"
+        )
+        
+        table.add_column("ID", style="cyan", width=6)
+        table.add_column("With", style="blue bold")
+        table.add_column("Last Message", style="white")
+        table.add_column("Time", style=self.style_config['timestamp'], width=10)
+
+        # Add rows for each conversation
+        for conv_id, msgs in conversations.items():
+            # Sort messages by timestamp
+            msgs.sort(key=lambda m: m.timestamp)
+            last_msg = msgs[-1]
+            
+            # Get the other participant
+            other_party = last_msg.recipient if last_msg.sender == self.discovery.username else last_msg.sender
+            
+            # Add row
+            table.add_row(
+                conv_id[:5],
+                other_party,
+                last_msg.content[:50] + ('...' if len(last_msg.content) > 50 else ''),
+                last_msg.timestamp.strftime('%H:%M:%S')
+            )
+            
+        # Return the table in a panel
+        return Panel(
+            table,
+            box=DOUBLE,
+            title="Conversations",
+            border_style="blue",
+            padding=(1, 1)
+        )
 
     def _send_message(self, content):
+        """Send a message to the current recipient"""
         if not content.strip():
             return
 
@@ -98,44 +195,19 @@ class MessageView:
             )
             if msg:
                 self.messages.append(msg)
-                # Force update display
-                if hasattr(self, 'app'):
-                    self.app.invalidate()
 
-    def format_conversation_list(self):
-        """Format the list of conversations for display"""
-        # Group messages by conversation
-        conversations: Dict[str, List[Message]] = {}
-        for msg in self.discovery.list_messages():
-            conv_id = msg.conversation_id
-            if conv_id not in conversations:
-                conversations[conv_id] = []
-            conversations[conv_id].append(msg)
-
-        text = [
-            ("class:prompt", "Conversations:\n"),
-            ("", "─" * 60 + "\n")
-        ]
-
-        for conv_id, msgs in conversations.items():
-            # Sort messages by timestamp
-            msgs.sort(key=lambda m: m.timestamp)
-            last_msg = msgs[-1]
-            
-            # Get the other participant
-            other_party = last_msg.recipient if last_msg.sender == self.discovery.username else last_msg.sender
-            
-            text.extend([
-                ("class:info", f"ID: {conv_id[:5]} "),
-                ("class:peer", f"with {other_party}"),
-                ("class:timestamp", f" (Last: {last_msg.timestamp.strftime('%H:%M:%S')})"),
-                ("", "\n"),
-                ("class:info", f"Last message: "),
-                ("", f"{last_msg.content[:50]}{'...' if len(last_msg.content) > 50 else ''}\n"),
-                ("", "─" * 60 + "\n")
-            ])
-
-        return text
+    def _check_new_messages(self, live):
+        """Check for new messages and update display"""
+        while self.running:
+            if self.recipient and self.current_conversation_id:
+                # Get all messages for this conversation
+                new_messages = self.discovery.get_conversation(self.current_conversation_id)
+                if len(new_messages) > self.last_message_count:
+                    self.messages = new_messages
+                    self.last_message_count = len(new_messages)
+                    # Update the live display
+                    live.update(self._format_conversation_display())
+            time.sleep(0.1)  # Check every 100ms
 
     def show_conversation(self, peer: str, conversation_id: Optional[str] = None):
         """Show and interact with a conversation"""
@@ -147,108 +219,74 @@ class MessageView:
         self.messages = self.discovery.get_conversation(self.current_conversation_id)
         self.last_message_count = len(self.messages)
 
-        # Show messages UI
-        self._show_messages()
+        # Clear screen
+        os.system('cls' if os.name == 'nt' else 'clear')
+        
+        # Create Live display
+        with Live(self._format_conversation_display(), refresh_per_second=10) as live:
+            # Start message checking thread
+            check_thread = threading.Thread(target=self._check_new_messages, args=(live,))
+            check_thread.daemon = True
+            check_thread.start()
+            
+            try:
+                # Input loop
+                while self.running:
+                    try:
+                        # Temporarily stop the live display to get input
+                        live.stop()
+                        message = Prompt.ask("\n[bold green]Enter your message[/bold green]")
+                        live.start()
+                        
+                        # Send the message
+                        self._send_message(message)
+                        
+                        # Update the display
+                        live.update(self._format_conversation_display())
+                    except KeyboardInterrupt:
+                        self.running = False
+                        break
+            finally:
+                self.running = False
+                # Clear screen when done
+                os.system('cls' if os.name == 'nt' else 'clear')
 
     def show_message_list(self):
         """Show list of all conversations"""
-        app = Application(
-            layout=Layout(
-                Window(
-                    content=FormattedTextControl(self.format_conversation_list),
-                    wrap_lines=True
-                )
-            ),
-            key_bindings=self.kb,
-            full_screen=True,
-            style=self.style,
-            mouse_support=True
-        )
-
-        clear()
-        app.run()
-        clear()
-
-    def _check_new_messages(self):
-        """Check for new messages and update display"""
-        while self.running:
-            if self.recipient and self.current_conversation_id:
-                # Get all messages for this conversation
-                new_messages = self.discovery.get_conversation(self.current_conversation_id)
-                if len(new_messages) > self.last_message_count:
-                    self.messages = new_messages
-                    self.last_message_count = len(new_messages)
-                    # Force refresh of the display
-                    if hasattr(self, 'app'):
-                        self.app.invalidate()
-            time.sleep(0.1)  # Check every 100ms
-
-    def _show_messages(self):
-        """Display messages in the UI"""
-        # Create auto-scrolling message window
-        message_window = Window(
-            content=FormattedTextControl(
-                self._format_messages,
-                focusable=False  # Make message window not focusable
-            ),
-            wrap_lines=True,
-            always_hide_cursor=True,
-            scroll_offsets=ScrollOffsets(top=1, bottom=1),
-            allow_scroll_beyond_bottom=False
-        )
-
-        # Add input window if in conversation mode
-        if self.recipient:
-            input_window = Window(
-                content=BufferControl(
-                    buffer=self.message_buffer,
-                    focusable=True
-                ),
-                height=1,
-                dont_extend_height=True
-            )
-            layout = Layout(HSplit([
-                message_window,
-                input_window
-            ]))
-            # Ensure input window gets focus
-            layout.focus(input_window)
-        else:
-            layout = Layout(message_window)
-
-        # Create and configure the application
-        self.app = Application(
-            layout=layout,
-            key_bindings=self.kb,
-            full_screen=True,
-            style=self.style,
-            mouse_support=True,
-            erase_when_done=True
-        )
-
-        # Clear screen
-        clear()
+        os.system('cls' if os.name == 'nt' else 'clear')
         
-        # Start message checking thread
-        check_thread = threading.Thread(target=self._check_new_messages)
-        check_thread.daemon = True
-        check_thread.start()
+        conversation_panel = self.format_conversation_list()
         
-        # Start refresh thread
-        def refresh_screen():
-            while self.running:
-                self.app.invalidate()
-                time.sleep(0.1)
-
-        refresh_thread = threading.Thread(target=refresh_screen)
-        refresh_thread.daemon = True
-        refresh_thread.start()
-
-        try:
-            self.app.run()
-        finally:
-            self.running = False
-            clear()
+        # Create header
+        header = Panel(
+            Align.center(Text("P2P Messenger", style="bold white")),
+            box=HEAVY,
+            style="blue",
+            title="Conversations List",
+            title_align="center"
+        )
+        
+        # Create instructions
+        instructions = Panel(
+            Text("Press Ctrl+C to exit", style="italic"),
+            box=ROUNDED,
+            style="grey50",
+            border_style="grey50"
+        )
+        
+        # Display everything
+        with Live(Group(header, conversation_panel, instructions), refresh_per_second=4) as live:
+            try:
+                while self.running:
+                    # Periodically update the conversation list
+                    conversation_panel = self.format_conversation_list()
+                    live.update(Group(header, conversation_panel, instructions))
+                    time.sleep(1)
+            except KeyboardInterrupt:
+                self.running = False
+        
+        # Clear screen when done
+        os.system('cls' if os.name == 'nt' else 'clear')
 
 def send_new_message(discovery, recipient: str):
     """Start a direct message session with a recipient"""
