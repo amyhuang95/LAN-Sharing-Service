@@ -2,7 +2,6 @@ import socket
 from prompt_toolkit import PromptSession
 from prompt_toolkit.styles import Style
 from prompt_toolkit.formatted_text import HTML
-from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.shortcuts import clear
 import os
 from datetime import datetime
@@ -17,6 +16,7 @@ from rich.markdown import Markdown
 from .debug_view import DebugView
 from .user_list_view import UserListView
 from .message_view import MessageView, send_new_message
+from .autocomplete import CommandCompleter
 
 from ..core.udp_discovery import UDPPeerDiscovery
 from ..core.clipboard import Clipboard
@@ -67,20 +67,28 @@ class InteractiveSession:
         self._setup_prompt()
 
     def _setup_prompt(self):
-        """Setup the prompt session"""
+        """Setup the prompt session with advanced completion"""
         self.style = Style.from_dict({
             'username': '#00aa00 bold',
             'at': '#888888',
             'colon': '#888888',
             'pound': '#888888',
+            # Add styles for completion menu
+            'completion-menu': 'bg:#333333',
+            'completion-menu.completion': 'bg:#333333 #ffffff',
+            'completion-menu.completion.current': 'bg:#00aaaa #000000',
+            'completion-menu.meta.completion': 'bg:#333333 #999999',
+            'completion-menu.meta.completion.current': 'bg:#00aaaa #000000',
         })
         
-        self.completer = WordCompleter(list(self.commands.keys()))
+        # Use the advanced command completer instead of simple word completer
+        self.completer = CommandCompleter(self.discovery, self.commands)
         
         self.session = PromptSession(
             completer=self.completer,
             style=self.style,
-            complete_while_typing=True
+            complete_while_typing=True,
+            complete_in_thread=True,  # Perform completion in a separate thread for better responsiveness
         )
 
     def _show_user_list(self, *args):
@@ -337,8 +345,16 @@ Or use [command]all <resource_id> on[/] to share with everyone."""
         help_table.add_row("help", "Show this help message", "help")
         help_table.add_row("exit/quit", "Exit the application", "exit")
         
+        # Add note about autocompletion
+        autocomplete_note = Panel(
+            "[green]TIP:[/] Press [bold]Tab[/] to autocomplete commands, usernames, and file paths.",
+            border_style="green",
+            padding=1
+        )
+        
         self.console.print(Panel.fit(help_table, title="[bold]LAN Share Command Reference", 
                                     border_style="cyan"))
+        self.console.print(autocomplete_note)
 
     def clear_screen(self, *args):
         """Clear the terminal screen"""
@@ -415,7 +431,10 @@ Or use [command]all <resource_id> on[/] to share with everyone."""
         welcome_text.append("• Share clipboard contents securely\n\n", style="green")
         welcome_text.append("Type ", style="cyan")
         welcome_text.append("help", style="bold blue")
-        welcome_text.append(" for available commands", style="cyan")
+        welcome_text.append(" for available commands\n", style="cyan")
+        welcome_text.append("Press ", style="cyan")
+        welcome_text.append("Tab", style="bold blue")
+        welcome_text.append(" to autocomplete commands, usernames, and file paths", style="cyan")
         
         welcome_panel = Panel(
             welcome_text,
