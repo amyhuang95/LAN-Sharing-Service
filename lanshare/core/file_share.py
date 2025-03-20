@@ -65,6 +65,11 @@ class SharedResource:
             shared_to_all: Whether the resource is shared to everyone.
             ftp_password: Password for FTP access.
         """
+        basename = os.path.basename(path)
+        if basename in ['.', '..']:
+            # Get the actual directory name for resource ID generation
+            basename = os.path.basename(os.path.abspath(path))
+        
         self.id = f"{owner}_{int(time.time())}_{os.path.basename(path)}"
         self.owner = owner
         self.path = path
@@ -723,103 +728,111 @@ class FileShareManager:
             # Explicitly set binary mode for file transfers
             ftp.sendcmd('TYPE I')
             
-            # Get the directory listing in a more reliable way
-            if resource.is_directory:
-                # For directories, check if we can change to that directory
-                try:
-                    # Try to change to the directory
-                    original_dir = ftp.pwd()
-                    ftp.cwd(resource_name)
-                    self.debug_log(f"Successfully found directory: {resource_name}")
-                    
-                    # Go back to the original directory
-                    ftp.cwd(original_dir)
-                    
-                    # Now we know the directory exists
-                    os.makedirs(dest_path, exist_ok=True)
-                    self._download_directory_recursive(ftp, resource_name, dest_path)
-                    
-                    # Only mark as downloaded if successful
-                    self.downloaded_resources.add(resource.id)
-                    self._save_resources()
-                    self.debug_log(f"Downloaded directory {resource.path} to {dest_path}")
-                    
-                except Exception as e:
-                    self.debug_log(f"Error accessing or downloading directory: {e}")
-                    import traceback
-                    self.debug_log(f"Traceback: {traceback.format_exc()}")
-            else:
-                # For files, check if the file exists in the listing
-                try:
-                    # Get list of files in the current directory
-                    file_list = []
-                    try:
-                        # Try using nlst which is more reliable for filename checking
-                        remote_files = ftp.nlst()
-                        file_found = resource_name in remote_files
-                    except Exception as e:
-                        # If nlst fails, fall back to dir and manual checking
-                        self.debug_log(f"nlst failed, falling back to dir: {e}")
-                        ftp.dir(file_list.append)
-                        file_found = any(resource_name in item.split()[-1] for item in file_list if len(item.split()) > 0)
-                    
-                    if not file_found:
-                        self.debug_log(f"File {resource_name} not found on server")
-                        ftp.quit()
-                        return
+            # First, get a complete listing of the FTP directory to know what's actually there
+            try:
+                # Get list of files and directories in the root directory
+                ftp_files = []
+                ftp.dir(ftp_files.append)
+                self.debug_log(f"FTP directory contents: {ftp_files}")
+                
+                # Parse directory listing to get actual available items
+                available_items = []
+                for item in ftp_files:
+                    if not item.strip():
+                        continue
                         
-                    # File exists, download it
+                    # Try to extract the filename (always at the end of the listing)
+                    parts = item.split()
+                    if len(parts) > 0:
+                        filename = parts[-1]
+                        is_dir = item.strip().startswith('d')
+                        available_items.append((filename, is_dir))
+                
+                self.debug_log(f"Available items on FTP server: {available_items}")
+                
+                # Check if our resource exists in the available items
+                found_item = None
+                for filename, is_dir in available_items:
+                    if filename == resource_name:
+                        found_item = (filename, is_dir)
+                        break
+                
+                if not found_item:
+                    # Resource not found by exact name, let's see if it's a special case like a directory
+                    # For directories, the original name might be different due to normalization
+                    self.debug_log(f"Resource {resource_name} not found by exact name, checking alternatives")
+                    
+                    # Check if any of the available items matches our resource ID
+                    resource_id_parts = resource.id.split('_')
+                    if len(resource_id_parts) >= 3:
+                        orig_resource_name = resource_id_parts[2]  # The part after owner_timestamp_
+                        self.debug_log(f"Checking for original resource name from ID: {orig_resource_name}")
+                        
+                        for filename, is_dir in available_items:
+                            if filename == orig_resource_name:
+                                found_item = (filename, is_dir)
+                                resource_name = filename  # Update resource_name to match what's on the server
+                                self.debug_log(f"Found resource by ID-derived name: {filename}")
+                                break
+                
+                if not found_item:
+                    self.debug_log(f"Resource not found on FTP server: checked {resource_name}")
+                    ftp.quit()
+                    return
+                    
+                filename, is_dir = found_item
+                self.debug_log(f"Found resource on FTP server: {filename} (is_directory: {is_dir})")
+                
+                # Now proceed with download based on what we found
+                if is_dir:
+                    # Directory download
+                    os.makedirs(dest_path, exist_ok=True)
+                    self.debug_log(f"Downloading directory: {filename}")
+                    try:
+                        self._download_directory_recursive(ftp, filename, dest_path)
+                        self.downloaded_resources.add(resource.id)
+                        self._save_resources()
+                        self.debug_log(f"Downloaded directory {resource.path} to {dest_path}")
+                    except Exception as e:
+                        self.debug_log(f"Error downloading directory: {e}")
+                        import traceback
+                        self.debug_log(f"Traceback: {traceback.format_exc()}")
+                else:
+                    # File download
                     os.makedirs(dest_dir, exist_ok=True)
+                    self.debug_log(f"Downloading file: {filename}")
                     
                     # Open file in binary write mode
                     with open(dest_path, 'wb') as f:
-                        self.debug_log(f"Starting download of {resource_name} in binary mode")
-                        
-                        # Simpler callback function
                         def callback(data):
                             f.write(data)
                         
                         # Use binary transfer mode with optimized block size
                         self.debug_log(f"Using RETR command with block size 8192")
-                        ftp.retrbinary(f'RETR {resource_name}', callback, blocksize=8192)
+                        ftp.retrbinary(f'RETR {filename}', callback, blocksize=8192)
                     
-                    # Verify file was downloaded successfully
+                    # Verify successful download
                     file_size = os.path.getsize(dest_path)
-                    self.debug_log(f"First download attempt completed. File size: {file_size} bytes")
+                    self.debug_log(f"Download completed. File size: {file_size} bytes")
                     
-                    if file_size == 0:
-                        self.debug_log(f"Warning: Downloaded file {dest_path} is empty! Trying again with smaller block size...")
-                        # Try one more time with even smaller block size
-                        with open(dest_path, 'wb') as f:
-                            self.debug_log(f"Using RETR command with block size 1024")
-                            ftp.retrbinary(f'RETR {resource_name}', f.write, blocksize=1024)
-                        
-                        # Check again
-                        file_size = os.path.getsize(dest_path)
-                        if file_size == 0:
-                            self.debug_log(f"Second attempt failed. File still empty.")
-                        else:
-                            self.debug_log(f"Second attempt successful. File size: {file_size} bytes")
-                            self.downloaded_resources.add(resource.id)
-                            self._save_resources()
-                    else:
-                        self.debug_log(f"Successfully downloaded file to {dest_path} ({file_size} bytes)")
+                    if file_size > 0:
                         self.downloaded_resources.add(resource.id)
                         self._save_resources()
-                except Exception as e:
-                    self.debug_log(f"Error downloading file: {e}")
-                    import traceback
-                    self.debug_log(f"Traceback: {traceback.format_exc()}")
-                    # If the file exists but is empty, delete it to avoid having empty files
-                    if os.path.exists(dest_path) and os.path.getsize(dest_path) == 0:
+                        self.debug_log(f"Successfully downloaded file to {dest_path} ({file_size} bytes)")
+                    else:
+                        self.debug_log(f"Warning: Downloaded file is empty")
                         os.remove(dest_path)
-                        self.debug_log(f"Removed empty file: {dest_path}")
+                        
+            except Exception as e:
+                self.debug_log(f"Error accessing FTP server: {e}")
+                import traceback
+                self.debug_log(f"Traceback: {traceback.format_exc()}")
             
             # Close connection
             ftp.quit()
+            
         except Exception as e:
             self.debug_log(f"Error in download_resource: {e}")
-            # Log the full exception traceback for better debugging
             import traceback
             self.debug_log(f"Traceback: {traceback.format_exc()}")
             
