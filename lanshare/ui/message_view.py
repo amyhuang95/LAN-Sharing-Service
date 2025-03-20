@@ -6,37 +6,16 @@ from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.styles import Style
 from prompt_toolkit.shortcuts import clear
-from prompt_toolkit.formatted_text import to_formatted_text
-from prompt_toolkit.filters import Condition
-
-from rich.console import Console
-from rich.panel import Panel
-from rich.text import Text
-from rich.box import ROUNDED, HEAVY, DOUBLE
-from rich.table import Table
-from rich.style import Style as RichStyle
-from rich.console import ConsoleOptions, RenderResult
+from prompt_toolkit.formatted_text import HTML
 
 from datetime import datetime
 from typing import List, Optional, Dict
 import threading
 import time
 import uuid
-import io
+import os
 
 from ..core.types import Message
-
-class RichToPromptToolkit:
-    """Utility class to convert Rich renderable objects to prompt_toolkit formatted text"""
-    @staticmethod
-    def convert(renderable) -> List:
-        """Convert a Rich renderable to prompt_toolkit formatted text"""
-        console = Console(file=io.StringIO(), width=100)
-        console.print(renderable)
-        output = console.file.getvalue()
-        
-        # Simple conversion - a more sophisticated version would handle ANSI codes
-        return [("", output)]
 
 class MessageView:
     def __init__(self, discovery, recipient=None):
@@ -48,19 +27,6 @@ class MessageView:
         self.last_message_count = 0
         self.current_conversation_id = None
         self.message_buffer = Buffer()
-        
-        # Rich console for formatting
-        self.console = Console(width=120, record=True)
-        
-        # Message styles for Rich
-        self.rich_styles = {
-            'user_message': RichStyle(color="green", bold=True),
-            'peer_message': RichStyle(color="blue", bold=True),
-            'timestamp': RichStyle(color="grey62"),
-            'system': RichStyle(color="yellow", italic=True),
-            'header': RichStyle(color="white", bold=True),
-            'divider': RichStyle(color="grey50")
-        }
         
         # Setup components
         self._setup_keybindings()
@@ -84,85 +50,108 @@ class MessageView:
     def _setup_styles(self):
         # prompt_toolkit styles
         self.style = Style.from_dict({
-            'username': '#00aa00 bold',    # Green for current user
-            'peer': '#0000ff bold',        # Blue for other users
-            'timestamp': '#888888',        # Gray for timestamp
-            'prompt': '#ff0000',           # Red for prompt
-            'info': '#888888 italic',      # Gray italic for info
+            'username': '#00aa00 bold',     # Green for current user
+            'peer': '#0000ff bold',         # Blue for other users
+            'timestamp': '#888888',         # Gray for timestamp
+            'prompt': '#ff0000',            # Red for prompt
+            'info': '#888888 italic',       # Gray italic for info
             'header': 'bg:#000088 #ffffff', # White on blue for header
+            'box': '#444444',               # Dark gray for box drawing
+            'message-box-self': '#00aa00',  # Green for user message boxes
+            'message-box-peer': '#0000ff',  # Blue for peer message boxes
         })
 
-    def _format_rich_message(self, msg: Message) -> Panel:
-        """Format a single message using Rich Panel"""
+    def _format_message_box(self, msg: Message) -> str:
+        """Format a single message with HTML for prompt_toolkit, handling wrapping properly"""
         # Format timestamp
         time_str = msg.timestamp.strftime("%H:%M:%S")
         
+        # Get terminal width
+        import shutil
+        terminal_width = shutil.get_terminal_size().columns - 4  # Subtract a bit for margins
+        box_width = min(terminal_width, 80)  # Cap at 80 or terminal width, whichever is smaller
+        
         # Determine if message is from current user or peer
         is_self = msg.sender == self.discovery.username
+        box_style = "message-box-self" if is_self else "message-box-peer"
+        user_style = "username" if is_self else "peer"
         
-        # Create header with sender info and timestamp
-        header = Text()
-        header.append(
-            f"{msg.sender}", 
-            style=self.rich_styles['user_message'] if is_self else self.rich_styles['peer_message']
-        )
-        header.append(f" • {time_str}", style=self.rich_styles['timestamp'])
+        # Calculate header width
+        header_text = f"{msg.sender} • {time_str}"
         
-        # Create message content
-        content = Text(msg.content)
+        # Create nicely formatted HTML for the message header
+        html = f"""
+        <{box_style}>╭{'─' * (min(box_width - 2, len(header_text) + 4))}╮</{box_style}>
+        <{box_style}>│ </{box_style}><{user_style}>{msg.sender}</{user_style}> <timestamp>• {time_str}</timestamp><{box_style}>{' ' * max(0, box_width - len(header_text) - 4)} │</{box_style}>
+        <{box_style}>├{'─' * (box_width - 2)}┤</{box_style}>
+        """
         
-        # Create panel with appropriate styling
-        border_style = "green" if is_self else "blue"
-        panel = Panel(
-            content,
-            box=ROUNDED,
-            border_style=border_style,
-            title=header,
-            title_align="left",
-            width=None
-        )
+        # Process message content with proper wrapping
+        content_width = box_width - 4  # Subtract margin for the box borders
+        lines = []
         
-        return panel
+        # Split the message by newlines first
+        for paragraph in msg.content.split('\n'):
+            # Then wrap each paragraph to fit the content width
+            current_line = ""
+            for word in paragraph.split():
+                if len(current_line) + len(word) + 1 <= content_width:
+                    current_line += (" " + word if current_line else word)
+                else:
+                    lines.append(current_line)
+                    current_line = word
+            if current_line:
+                lines.append(current_line)
+        
+        # If no content, add a single empty line
+        if not lines:
+            lines = [""]
+            
+        # Add message content with proper wrapping
+        for line in lines:
+            padding = ' ' * (box_width - len(line) - 4)  # Calculate padding based on box width
+            html += f"<{box_style}>│ </{box_style}>{line}{padding}<{box_style}> │</{box_style}>\n"
+            
+        # Close the box
+        html += f"<{box_style}>╰{'─' * (box_width - 2)}╯</{box_style}>\n"
+        
+        return html
 
     def _format_messages(self):
-        """Format messages for prompt_toolkit display"""
-        formatted_text = []
+        """Format messages for prompt_toolkit display using HTML with terminal width adaptation"""
+        # Get terminal width
+        import shutil
+        terminal_width = shutil.get_terminal_size().columns - 2  # Subtract a bit for margins
         
-        # Add header
+        # Create header
         title = f"Conversation with {self.recipient}" if self.recipient else "Message List"
-        formatted_text.extend([
-            ("class:header", f"╔═══ {title} ").ljust(100, "═") + "╗\n",
-        ])
+        header = f"<header>{'═' * 10} {title} {'═' * (terminal_width - len(title) - 12)}</header>\n\n"
         
         # Format each message
+        message_html = ""
         for msg in sorted(self.messages, key=lambda m: m.timestamp):
-            # Use Rich to format the message
-            panel = self._format_rich_message(msg)
-            
-            # Convert Rich panel to string
-            with self.console.capture() as capture:
-                self.console.print(panel)
-            panel_str = capture.get()
-            
-            # Add to formatted text
-            formatted_text.extend([("", panel_str + "\n")])
+            message_html += self._format_message_box(msg) + "\n"
+        
+        # Add empty message if no messages yet
+        if not self.messages:
+            message_html += "<info>No messages yet. Type below to start the conversation.</info>\n\n"
         
         # Add input prompt if in direct message mode
+        footer = ""
         if self.recipient:
-            formatted_text.extend([
-                ("", "\n"),
-                ("class:prompt", "Type your message (Enter to send, Ctrl-C to exit)> ")
-            ])
+            footer = "\n<prompt>Type your message (Enter to send, Ctrl-C to exit)> </prompt>"
         else:
-            formatted_text.extend([
-                ("", "\n"),
-                ("class:prompt", "Press 'q' to exit")
-            ])
+            footer = "\n<info>Press 'q' to exit</info>"
             
-        return formatted_text
+        # Combine all parts
+        return HTML(header + message_html + footer)
 
     def format_conversation_list(self):
-        """Format the list of conversations using Rich Table"""
+        """Format the list of conversations for prompt_toolkit with proper terminal width"""
+        # Get terminal width
+        import shutil
+        terminal_width = shutil.get_terminal_size().columns - 2  # Subtract a bit for margins
+        
         # Group messages by conversation
         conversations: Dict[str, List[Message]] = {}
         for msg in self.discovery.list_messages():
@@ -171,48 +160,49 @@ class MessageView:
                 conversations[conv_id] = []
             conversations[conv_id].append(msg)
         
-        # Create a Rich table
-        table = Table(
-            box=DOUBLE,
-            show_header=True,
-            header_style="bold white on blue"
-        )
+        # Calculate column widths based on terminal width
+        id_width = 7
+        time_width = 12
+        with_width = min(20, max(10, int(terminal_width * 0.2)))  # 20% of width, min 10, max 20
+        msg_width = terminal_width - id_width - with_width - time_width - 5  # 5 for borders
         
-        table.add_column("ID", style="cyan", width=6)
-        table.add_column("With", style="blue bold")
-        table.add_column("Last Message", style="white")
-        table.add_column("Time", style="grey62", width=10)
+        # Create header
+        header = f"<header>{'═' * (terminal_width - 1)}</header>\n"
+        header += f"<header>{'═' * 10} Conversations List {'═' * (terminal_width - 30)}</header>\n\n"
+        
+        # Create table header with box drawing characters
+        table = f"<box>┌{'─' * id_width}┬{'─' * with_width}┬{'─' * msg_width}┬{'─' * time_width}┐</box>\n"
+        table += f"<box>│</box> {'ID'.ljust(id_width - 1)}<box>│</box> {'With'.ljust(with_width - 1)}<box>│</box> {'Last Message'.ljust(msg_width - 1)}<box>│</box> {'Time'.ljust(time_width - 1)}<box>│</box>\n"
+        table += f"<box>├{'─' * id_width}┼{'─' * with_width}┼{'─' * msg_width}┼{'─' * time_width}┤</box>\n"
         
         # Add rows for each conversation
-        for conv_id, msgs in conversations.items():
-            # Sort messages by timestamp
-            msgs.sort(key=lambda m: m.timestamp)
-            last_msg = msgs[-1]
-            
-            # Get the other participant
-            other_party = last_msg.recipient if last_msg.sender == self.discovery.username else last_msg.sender
-            
-            # Add row
-            table.add_row(
-                conv_id[:5],
-                other_party,
-                last_msg.content[:50] + ('...' if len(last_msg.content) > 50 else ''),
-                last_msg.timestamp.strftime('%H:%M:%S')
-            )
+        if not conversations:
+            table += f"<box>│</box> {'No conversations found'.ljust(terminal_width - 4)}<box>│</box>\n"
+        else:
+            for conv_id, msgs in conversations.items():
+                # Sort messages by timestamp
+                msgs.sort(key=lambda m: m.timestamp)
+                last_msg = msgs[-1]
+                
+                # Get the other participant
+                other_party = last_msg.recipient if last_msg.sender == self.discovery.username else last_msg.sender
+                
+                # Format message preview with proper truncation
+                preview = last_msg.content.replace('\n', ' ')
+                if len(preview) > msg_width - 5:
+                    preview = preview[:msg_width - 5] + "..."
+                
+                # Add row with proper padding
+                table += f"<box>│</box> <cyan>{conv_id[:5].ljust(id_width - 2)}</cyan><box>│</box> <peer>{other_party[:with_width-2].ljust(with_width - 2)}</peer><box>│</box> {preview.ljust(msg_width - 1)}<box>│</box> <timestamp>{last_msg.timestamp.strftime('%H:%M:%S')}</timestamp><box>│</box>\n"
         
-        # Convert Rich table to string
-        with self.console.capture() as capture:
-            self.console.print(table)
-        table_str = capture.get()
+        # Close the table
+        table += f"<box>└{'─' * id_width}┴{'─' * with_width}┴{'─' * msg_width}┴{'─' * time_width}┘</box>\n\n"
         
-        # Format for prompt_toolkit
-        formatted_text = [
-            ("class:header", "╔═══ Conversations List ").ljust(100, "═") + "╗\n",
-            ("", table_str + "\n"),
-            ("class:info", "Press 'q' to exit\n")
-        ]
+        # Add footer
+        footer = "<info>Press 'q' to exit</info>"
         
-        return formatted_text
+        # Combine all parts
+        return HTML(header + table + footer)
 
     def _send_message(self, content):
         """Send a message to the current recipient"""
@@ -264,7 +254,8 @@ class MessageView:
             ),
             wrap_lines=True,
             always_hide_cursor=True,
-            scroll_offsets=ScrollOffsets(top=1, bottom=1)
+            scroll_offsets=ScrollOffsets(top=1, bottom=1),
+            allow_scroll_beyond_bottom=True
         )
 
         # Add input window if in conversation mode
