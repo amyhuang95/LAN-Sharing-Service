@@ -51,6 +51,51 @@ class UserCompleter(Completer):
                 )
 
 
+class EnhancedPathCompleter(PathCompleter):
+    """Enhanced path completer with better display of results."""
+    
+    def get_completions(self, document, complete_event):
+        """Return completions for paths with enhanced display."""
+        word_before_cursor = document.text
+        
+        # If just starting or at ~, initialize with current directory or home
+        if not word_before_cursor or word_before_cursor == '~':
+            path = os.path.expanduser('~') if word_before_cursor == '~' else '.'
+            try:
+                # List directory contents
+                for filename in os.listdir(path):
+                    full_path = os.path.join(path, filename)
+                    is_dir = os.path.isdir(full_path)
+                    display = filename + ('/' if is_dir else '')
+                    meta = 'Directory' if is_dir else 'File'
+                    
+                    if path == '.':
+                        # Just show filename for current directory
+                        completion_text = filename + ('/' if is_dir else '')
+                    else:
+                        # Use full path when not in current directory
+                        if path == os.path.expanduser('~'):
+                            # Use ~ for home directory
+                            completion_text = os.path.join('~', filename)
+                            completion_text = completion_text + ('/' if is_dir else '')
+                        else:
+                            # Use absolute path
+                            completion_text = full_path + ('/' if is_dir else '')
+                            
+                    yield Completion(
+                        completion_text,
+                        start_position=-len(word_before_cursor),
+                        display=display,
+                        display_meta=meta
+                    )
+                return
+            except OSError:
+                pass  # Fallback to normal path completion
+        
+        # Regular path completion with expanduser support
+        yield from super().get_completions(document, complete_event)
+
+
 class CommandCompleter(Completer):
     """Complete commands with context-aware username and path completion."""
     
@@ -63,7 +108,7 @@ class CommandCompleter(Completer):
         """
         self.discovery = discovery
         self.commands = commands
-        self.path_completer = PathCompleter(
+        self.path_completer = EnhancedPathCompleter(
             expanduser=True,
             only_directories=False,
         )
@@ -259,7 +304,9 @@ class CommandCompleter(Completer):
         # Check if we need path completion
         if command in self.path_arg_commands and arg_position == self.path_arg_commands[command] + 1:
             # Path position
-            yield from self.path_completer.get_completions(current_word_document, complete_event)
+            last_word = words[-1] if words else ""
+            path_document = Document(last_word, len(last_word))
+            yield from self.path_completer.get_completions(path_document, complete_event)
             return
         
         # For any other case, provide command-specific completions
