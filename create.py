@@ -21,7 +21,7 @@ import threading
 from lanshare.config.settings import Config
 from lanshare.core.udp_discovery import UDPPeerDiscovery
 from lanshare.core.clipboard import Clipboard
-from lanshare.ui.session import InteractiveSession
+from lanshare.terminal_gui.session import InteractiveSession
 
 # Configure logging to suppress pyftpdlib messages
 logging.basicConfig(level=logging.ERROR)
@@ -112,6 +112,9 @@ def main():
     parser.add_argument('command', choices=['create'], help='Command to execute')
     parser.add_argument('--username', help='Username for the peer', required=False)
     parser.add_argument("-sc", "--share_clip", help="Enable clipboard sharing with peers", action="store_true")
+    # This is the entry point to change differnet GUI
+    parser.add_argument("--gui", choices=['terminal', 'streamlit'], default='terminal', 
+                        help="Select GUI implementation (default: terminal)")
     
     args = parser.parse_args()
     
@@ -131,37 +134,45 @@ def main():
         clipboard = Clipboard(discovery_service, config, args.share_clip)
         clipboard.start()
         
-        # Start terminal UI
-        session = InteractiveSession(discovery_service, clipboard)
+        # Start appropriate GUI based on user selection
+        if args.gui == 'terminal':
+            # Start terminal UI
+            session = InteractiveSession(discovery_service, clipboard)
+            
+            # Completely suppress stderr and stdout for clean exit
+            class DevNull:
+                def write(self, msg):
+                    pass
+                def flush(self):
+                    pass
+            
+            # Save original stderr/stdout
+            original_stderr = sys.stderr
+            original_stdout = sys.stdout
+            
+            try:
+                # Suppress pyftpdlib error messages during normal operation
+                devnull = open(os.devnull, 'w')
+                sys.stderr = devnull
+                
+                session.start()
+                
+            except KeyboardInterrupt:
+                # On keyboard interrupt, suppress all output
+                print("\nExiting application...", flush=True)
+                
+                # Immediately redirect both stderr and stdout to suppress exit messages
+                sys.stderr = DevNull()
+                sys.stdout = DevNull()
+                
+                # Also suppress threading excepthook errors
+                threading.excepthook = lambda *args: None
         
-        # Completely suppress stderr and stdout for clean exit
-        class DevNull:
-            def write(self, msg):
-                pass
-            def flush(self):
-                pass
-        
-        # Save original stderr/stdout
-        original_stderr = sys.stderr
-        original_stdout = sys.stdout
-        
-        try:
-            # Suppress pyftpdlib error messages during normal operation
-            devnull = open(os.devnull, 'w')
-            sys.stderr = devnull
-            
-            session.start()
-            
-        except KeyboardInterrupt:
-            # On keyboard interrupt, suppress all output
-            print("\nExiting application...", flush=True)
-            
-            # Immediately redirect both stderr and stdout to suppress exit messages
-            sys.stderr = DevNull()
-            sys.stdout = DevNull()
-            
-            # Also suppress threading excepthook errors
-            threading.excepthook = lambda *args: None
+        elif args.gui == 'streamlit':
+            print("Streamlit GUI is not yet implemented.")
+            print("This will be available in a future update.")
+            graceful_shutdown()
+            sys.exit(0)
 
 if __name__ == "__main__":
     main()

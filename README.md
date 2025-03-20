@@ -14,10 +14,17 @@ A local-area-network (LAN) sharing service that shares files and clipboards acro
   - [Sharing Files](#share-share-path-to-a-filedirectory)
   - [Viewing Shared Files](#show-all-shared-files-files)
   - [Managing Access](#regular-access-command-access-resource_id-user_id-addrm)
-- [Basic Commands](#iter1-basic-commands---peer-discovery--message)
-  - [User List](#user-list-ul)
-  - [Debug View](#debug-view-debug)
-  - [Messaging](#message-view-om-lm-msg)
+- [Clipboard Sharing](#iter1-basic-commands---peer-discovery--message)
+  - [sc/rc](#user-list-ul)
+- [Peer Discovery & Msg Exchange](#iter1-basic-commands---peer-discovery--message)
+  - [msg](#user-list-ul)
+  - [lm/om](#debug-view-debug)
+- [GUI](#iter1-basic-commands---peer-discovery--message)
+  - [gui=terminal](#user-list-ul)
+- [Auto-Complete](#iter1-basic-commands---peer-discovery--message)
+  - [gui=terminal](#user-list-ul)
+
+
 
 ## CUJ
 - *CUJ#1:* sub LAN with access code;
@@ -145,47 +152,3 @@ evan-dayy#07a8@LAN(192.168.4.141)# access samwsize_id jennifer#24s7 rm
 Successfully removed from access list for jennifer#24s7
 ```
 - Give access to a particular user; 
-
-## Iter1 Basic Commands - Peer Discovery & Message
-### User List `ul`
-By running `ul`, you will see a list of active user.
-
-- pre-requisite: Create a user in another device called `jennifer`.
- 
-```
-evan-dayy#81b6@LAN(192.168.4.141)# ul
-```
-![Local Image](assets/user_list.png)
-
-
-### Debug View `debug`
-
-To easily track the received and sent packets, we explicitly design the `debug view` to monitor the traffic. This also give us convenience when we implement other service for later iterations.
-
-```
-evan-dayy#81b6@LAN(192.168.4.141)# debug
-```
-![Local Image](assets/debug_view.png)
-
-
-### Message View `om`, `lm`, `msg`
-Let's text to Jennifer:
-```
-evan-dayy#81b6@LAN(192.168.4.141)# msg jennifer#2e69
-```
-![Local Image](assets/message_u1.png)
-
-From Jennifer point of view to list message `lm`:
-```
-jennifer#2e69@LAN(192.168.4.34)# lm
-```
-![Local Image](assets/message_u2.png)
-
-From Jennifer point of view to open message `om` and reply:
-```
-jennifer#2e69@LAN(192.168.4.34)# om 0f033
-```
-![Local Image](assets/message_u3.png)
-
-From Evan point of view:
-![Local Image](assets/message_u4.png)
