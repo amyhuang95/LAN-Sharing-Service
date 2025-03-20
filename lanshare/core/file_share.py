@@ -340,15 +340,24 @@ class FileShareManager:
         """
         try:
             path = os.path.abspath(path)
+            
+            # Check if the path exists
             if not os.path.exists(path):
                 self.debug_log(f"Path does not exist: {path}")
                 return None
             
+            # Check if trying to share the shared directory itself
+            shared_dir_path = os.path.abspath(str(self.share_dir))
+            if path == shared_dir_path:
+                self.debug_log(f"Cannot share the 'shared' directory itself: {path}")
+                return None
+                
             # Check if already shared
             existing_resource = self._find_existing_shared_resource(path)
             if existing_resource:
                 self.debug_log(f"Resource already shared with ID: {existing_resource.id}")
                 return existing_resource
+                
             is_directory = os.path.isdir(path)
             # Create shared resource with password
             resource = SharedResource(
@@ -358,9 +367,11 @@ class FileShareManager:
                 shared_to_all=share_to_all,
                 ftp_password=self.default_password
             )
+            
             # Create symlink or copy file in user's share directory
             resource_name = os.path.basename(path)
             target_path = self.user_share_dir / resource_name
+            
             # Handle name conflicts by appending a number
             counter = 1
             original_name = resource_name
@@ -369,6 +380,7 @@ class FileShareManager:
                 resource_name = f"{name_parts[0]}_{counter}{name_parts[1] if len(name_parts) > 1 else ''}"
                 target_path = self.user_share_dir / resource_name
                 counter += 1
+                
             # ALWAYS copy the file/directory instead of using symlinks
             # This ensures FTP access will work properly
             if is_directory:
@@ -381,6 +393,7 @@ class FileShareManager:
             # Add to shared resources
             self.shared_resources[resource.id] = resource
             self._save_resources()
+            
             # Announce to peers
             self._announce_resource(resource)
             self.debug_log(f"Shared {'directory' if is_directory else 'file'}: {path}")
@@ -398,13 +411,34 @@ class FileShareManager:
             dest_path: Destination directory path.
         """
         try:
+            # Convert paths to absolute paths for comparison
+            abs_src_path = os.path.abspath(src_path)
+            abs_dest_path = os.path.abspath(str(dest_path))
+            shared_dir_path = os.path.abspath(str(self.share_dir))
+            
+            # Safety check: don't copy if destination is inside source (would cause infinite recursion)
+            if abs_dest_path.startswith(abs_src_path):
+                self.discovery.debug_print(f"Error: Destination {dest_path} is inside source {src_path}. Skipping to prevent recursion.")
+                return
+                
+            # Safety check: don't copy if source is the shared directory itself
+            if abs_src_path == shared_dir_path:
+                self.discovery.debug_print(f"Error: Cannot copy from the 'shared' directory itself: {src_path}")
+                return
+                
             # Create destination directory
             os.makedirs(dest_path, exist_ok=True)
+            
             # Copy all files and subdirectories
             for item in os.listdir(src_path):
                 src_item_path = os.path.join(src_path, item)
                 dest_item_path = os.path.join(dest_path, item)
                 
+                # Skip the shared directory if encountered
+                if os.path.abspath(src_item_path) == shared_dir_path:
+                    self.discovery.debug_print(f"Skipping 'shared' directory: {src_item_path}")
+                    continue
+                    
                 if os.path.isdir(src_item_path):
                     # Recursively copy subdirectory
                     self._recursive_copy(src_item_path, dest_item_path)
@@ -604,11 +638,12 @@ class FileShareManager:
             host_ip: The IP address of the host.
         """
         try:
-            self.debug_log(f"Downloading {os.path.basename(resource.path)} from {host_ip}...")
+            resource_name = os.path.basename(resource.path)
+            self.debug_log(f"Downloading {resource_name} from {host_ip}...")
             
             # Create destination path
             dest_dir = self.share_dir / resource.owner
-            dest_path = dest_dir / os.path.basename(resource.path)
+            dest_path = dest_dir / resource_name
             
             # If the file already exists and this is an update, remove the old version
             if dest_path.exists() and resource.id in self.received_resources:
@@ -624,7 +659,7 @@ class FileShareManager:
             ftp.connect(host_ip, self.ftp_address[1])
             
             # Keep encoding as UTF-8 for command channel
-            ftp.encoding = 'utf-8'  # Changed from None to 'utf-8'
+            ftp.encoding = 'utf-8'
             
             # Try different login methods
             login_successful = False
@@ -655,42 +690,57 @@ class FileShareManager:
             # Explicitly set binary mode for file transfers
             ftp.sendcmd('TYPE I')
             
-            # List files in current directory
-            file_list = []
-            ftp.dir(file_list.append)
-            self.debug_log(f"FTP directory listing: {file_list}")
-            
-            # Check if the resource exists on the server
-            filename = os.path.basename(resource.path)
-            
-            # Try to find the file in the directory listing
-            found = False
-            for item in file_list:
-                if filename in item:
-                    found = True
-                    break
-            
-            if not found:
-                self.debug_log(f"File {filename} not found on server")
-                ftp.quit()
-                return
-            
-            # Download the resource
+            # Get the directory listing in a more reliable way
             if resource.is_directory:
-                # For directories, we need to recursively download
+                # For directories, check if we can change to that directory
                 try:
+                    # Try to change to the directory
+                    original_dir = ftp.pwd()
+                    ftp.cwd(resource_name)
+                    self.debug_log(f"Successfully found directory: {resource_name}")
+                    
+                    # Go back to the original directory
+                    ftp.cwd(original_dir)
+                    
+                    # Now we know the directory exists
                     os.makedirs(dest_path, exist_ok=True)
-                    self._download_directory_recursive(ftp, filename, dest_path)
+                    self._download_directory_recursive(ftp, resource_name, dest_path)
+                    
+                    # Only mark as downloaded if successful
+                    self.downloaded_resources.add(resource.id)
+                    self._save_resources()
+                    self.debug_log(f"Downloaded directory {resource.path} to {dest_path}")
+                    
                 except Exception as e:
-                    self.debug_log(f"Error downloading directory: {e}")
+                    self.debug_log(f"Error accessing or downloading directory: {e}")
+                    import traceback
+                    self.debug_log(f"Traceback: {traceback.format_exc()}")
             else:
-                # For files, just download the file
+                # For files, check if the file exists in the listing
                 try:
+                    # Get list of files in the current directory
+                    file_list = []
+                    try:
+                        # Try using nlst which is more reliable for filename checking
+                        remote_files = ftp.nlst()
+                        file_found = resource_name in remote_files
+                    except Exception as e:
+                        # If nlst fails, fall back to dir and manual checking
+                        self.debug_log(f"nlst failed, falling back to dir: {e}")
+                        ftp.dir(file_list.append)
+                        file_found = any(resource_name in item.split()[-1] for item in file_list if len(item.split()) > 0)
+                    
+                    if not file_found:
+                        self.debug_log(f"File {resource_name} not found on server")
+                        ftp.quit()
+                        return
+                        
+                    # File exists, download it
                     os.makedirs(dest_dir, exist_ok=True)
                     
                     # Open file in binary write mode
                     with open(dest_path, 'wb') as f:
-                        self.debug_log(f"Starting download of {filename} in binary mode")
+                        self.debug_log(f"Starting download of {resource_name} in binary mode")
                         
                         # Simpler callback function
                         def callback(data):
@@ -698,7 +748,7 @@ class FileShareManager:
                         
                         # Use binary transfer mode with optimized block size
                         self.debug_log(f"Using RETR command with block size 8192")
-                        ftp.retrbinary(f'RETR {filename}', callback, blocksize=8192)
+                        ftp.retrbinary(f'RETR {resource_name}', callback, blocksize=8192)
                     
                     # Verify file was downloaded successfully
                     file_size = os.path.getsize(dest_path)
@@ -709,7 +759,7 @@ class FileShareManager:
                         # Try one more time with even smaller block size
                         with open(dest_path, 'wb') as f:
                             self.debug_log(f"Using RETR command with block size 1024")
-                            ftp.retrbinary(f'RETR {filename}', f.write, blocksize=1024)
+                            ftp.retrbinary(f'RETR {resource_name}', f.write, blocksize=1024)
                         
                         # Check again
                         file_size = os.path.getsize(dest_path)
@@ -717,10 +767,16 @@ class FileShareManager:
                             self.debug_log(f"Second attempt failed. File still empty.")
                         else:
                             self.debug_log(f"Second attempt successful. File size: {file_size} bytes")
+                            self.downloaded_resources.add(resource.id)
+                            self._save_resources()
                     else:
                         self.debug_log(f"Successfully downloaded file to {dest_path} ({file_size} bytes)")
+                        self.downloaded_resources.add(resource.id)
+                        self._save_resources()
                 except Exception as e:
                     self.debug_log(f"Error downloading file: {e}")
+                    import traceback
+                    self.debug_log(f"Traceback: {traceback.format_exc()}")
                     # If the file exists but is empty, delete it to avoid having empty files
                     if os.path.exists(dest_path) and os.path.getsize(dest_path) == 0:
                         os.remove(dest_path)
@@ -728,19 +784,12 @@ class FileShareManager:
             
             # Close connection
             ftp.quit()
-            # Only mark as downloaded if the file exists and has content
-            if os.path.exists(dest_path) and (resource.is_directory or os.path.getsize(dest_path) > 0):
-                self.downloaded_resources.add(resource.id)
-                self._save_resources()
-                self.debug_log(f"Downloaded {resource.path} to {dest_path}")
-            else:
-                self.debug_log(f"Download failed or resulted in empty file: {resource.path}")
         except Exception as e:
             self.debug_log(f"Error in download_resource: {e}")
             # Log the full exception traceback for better debugging
             import traceback
             self.debug_log(f"Traceback: {traceback.format_exc()}")
-
+            
     def _download_directory_recursive(self, ftp, remote_dir, local_dir):
         """Download a directory recursively.
         Args:
@@ -764,27 +813,41 @@ class FileShareManager:
                 file_list = []
                 ftp.dir(file_list.append)
                 self.debug_log(f"Directory contents: {file_list}")
+                
                 # Process each item
                 for item in file_list:
+                    # Skip empty items
+                    if not item.strip():
+                        continue
+                        
                     # Parse the directory listing line
                     # Format is typically: "drwxr-xr-x   2 user  group    4096 Jan 01 12:34 filename"
                     parts = item.split(None, 8)
                     
-                    # If no parts (empty line) or not enough parts, skip
+                    # If not enough parts, try a simpler approach
                     if len(parts) < 9:
-                        self.debug_log(f"Skipping invalid listing item: {item}")
-                        continue
-                    
-                    # Get the file/directory name (last part)
-                    name = parts[8]
+                        self.debug_log(f"Complex parsing failed for {item}, trying simpler approach")
+                        # Just get the last part of the listing as the name
+                        # This is less accurate but better than skipping
+                        simple_parts = item.split()
+                        if not simple_parts:
+                            self.debug_log(f"Skipping invalid listing item: {item}")
+                            continue
+                        name = simple_parts[-1]
+                        # Guess if it's a directory by 'd' at the start of the line
+                        is_dir = item.strip().startswith('d')
+                    else:
+                        # Standard case - extract name from the parsed parts
+                        name = parts[8]
+                        is_dir = parts[0].startswith('d')
                     
                     # Skip special directories
                     if name in ('.', '..'):
                         continue
-                    # Check if it's a directory (first character of permissions is 'd')
-                    is_dir = parts[0].startswith('d')
+                        
                     # Create full local path for this item
                     local_item_path = os.path.join(local_dir, name)
+                    
                     if is_dir:
                         # Recursively download directory
                         self.debug_log(f"Found subdirectory: {name}")
@@ -793,42 +856,47 @@ class FileShareManager:
                         # Download file in binary mode
                         self.debug_log(f"Downloading file: {name} to {local_item_path}")
                         
-                        # Open in binary mode with simpler callback
-                        with open(local_item_path, 'wb') as f:
-                            def callback(data):
-                                f.write(data)
-                            
-                            # Use more reliable block size
-                            self.debug_log(f"Using RETR command with block size 8192")
-                            ftp.retrbinary(f'RETR {name}', callback, blocksize=8192)
-                        
-                        # Verify file was downloaded successfully
-                        file_size = os.path.getsize(local_item_path)
-                        self.debug_log(f"First download attempt completed. File size: {file_size} bytes")
-                        
-                        if file_size == 0:
-                            self.debug_log(f"Warning: Downloaded file {local_item_path} is empty! Trying again...")
-                            # Try one more time with smaller block size
+                        try:
+                            # Open in binary mode with simpler callback
                             with open(local_item_path, 'wb') as f:
-                                self.debug_log(f"Using RETR command with block size 1024")
-                                ftp.retrbinary(f'RETR {name}', f.write, blocksize=1024)
+                                def callback(data):
+                                    f.write(data)
+                                
+                                # Use more reliable block size
+                                self.debug_log(f"Using RETR command with block size 8192")
+                                ftp.retrbinary(f'RETR {name}', callback, blocksize=8192)
                             
-                            # Check again
+                            # Verify file was downloaded successfully
                             file_size = os.path.getsize(local_item_path)
+                            self.debug_log(f"First download attempt completed. File size: {file_size} bytes")
+                            
                             if file_size == 0:
-                                self.debug_log(f"Second attempt failed. File still empty.")
-                                # Delete empty file
-                                os.remove(local_item_path)
-                                self.debug_log(f"Removed empty file: {local_item_path}")
+                                self.debug_log(f"Warning: Downloaded file {local_item_path} is empty! Trying again...")
+                                # Try one more time with smaller block size
+                                with open(local_item_path, 'wb') as f:
+                                    self.debug_log(f"Using RETR command with block size 1024")
+                                    ftp.retrbinary(f'RETR {name}', f.write, blocksize=1024)
+                                
+                                # Check again
+                                file_size = os.path.getsize(local_item_path)
+                                if file_size == 0:
+                                    self.debug_log(f"Second attempt failed. File still empty.")
+                                    # Delete empty file
+                                    os.remove(local_item_path)
+                                    self.debug_log(f"Removed empty file: {local_item_path}")
+                                else:
+                                    self.debug_log(f"Second attempt successful. File size: {file_size} bytes")
                             else:
-                                self.debug_log(f"Second attempt successful. File size: {file_size} bytes")
-                        else:
-                            self.debug_log(f"Successfully downloaded file {name} ({file_size} bytes)")
-                # Rturn to original directory
+                                self.debug_log(f"Successfully downloaded file {name} ({file_size} bytes)")
+                        except Exception as e:
+                            self.debug_log(f"Error downloading file {name}: {e}")
+                            # Try to continue with other files even if one fails
+                
+                # Return to original directory after processing all items
                 ftp.cwd(original_dir)
+                
             except Exception as e:
                 self.debug_log(f"Error during directory download: {e}")
-                # Log the full exception traceback for better debugging
                 import traceback
                 self.debug_log(f"Traceback: {traceback.format_exc()}")
                 # Try to go back to original directory
@@ -837,10 +905,9 @@ class FileShareManager:
                 except:
                     pass
                 raise
-                
+                    
         except Exception as e:
             self.debug_log(f"Error downloading directory {remote_dir}: {e}")
-            # Log the full exception traceback for better debugging
             import traceback
             self.debug_log(f"Traceback: {traceback.format_exc()}")
             
