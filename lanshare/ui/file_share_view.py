@@ -167,38 +167,58 @@ class FileShareView:
             self.status_history = self.status_history[-5:]
     
     def _get_resources_text(self):
-        """Generate the formatted resources list text"""
+        """Generate the formatted resources list text with proper alignment and dynamic line breaks."""
         # Use file_share_manager directly
         self.resources = self.file_share_manager.list_shared_resources()
+        
+        # Define column widths
+        col_widths = {
+            'id': 20,
+            'type': 10,
+            'name': 15,
+            'owner': 12,
+            'access': 12,
+            'shared': 16,
+            'modified': 20
+        }
+        
+        # Calculate total width (adding 2 for padding each column + border chars)
+        content_width = sum(col_widths.values()) + len(col_widths.values())*2
+        border_width = content_width + 2  # +2 for left and right border chars
         
         text = [
             ("", "\n"),
             ("class:title", "  Shared Resources "),
             ("", "\n"),
             ("", "  "),
-            ("class:border", "╭" + "─" * 110 + "╮"),  # Increased width to 110
+            ("class:border", "╭" + "─" * border_width + "╮"),
             ("", "\n")
         ]
         
         if not self.resources:
             text.extend([
                 ("", "  "),
-                ("class:border", "│"),
+                ("class:border", " "),
                 ("fg:gray", " No resources shared yet"),
-                ("", " " * (109 - len("No resources shared yet"))),  # Adjusted spacing
-                ("class:border", "│"),
+                ("", " " * (border_width - len("No resources shared yet") - 1)),
+                ("class:border", " "),
                 ("", "\n")
             ])
         else:
             # Header
+            header_text = (
+                f" {'ID':<{col_widths['id']}} {'Type':<{col_widths['type']}} {'Name':<{col_widths['name']}} "
+                f"{'Owner':<{col_widths['owner']}} {'Access':<{col_widths['access']}} {'Shared On':<{col_widths['shared']}} "
+                f"{'Last Modified':<{col_widths['modified']}} "
+            )
             text.extend([
                 ("", "  "),
-                ("class:border", "│"),
-                ("class:label", f" {'ID':<8} {'Type':<10} {'Name':<20} {'Owner':<12} {'Access':<12} {'Shared On':<16} {'Last Modified':<25}"),
-                ("class:border", "│"),
+                ("class:border", " "),
+                ("class:label", header_text),
+                ("class:border", " "),
                 ("", "\n"),
                 ("", "  "),
-                ("class:border", "├" + "─" * 110 + "┤"),  # Increased width to 110
+                ("class:border", "├" + "─" * border_width + "┤"),
                 ("", "\n")
             ])
             
@@ -206,9 +226,10 @@ class FileShareView:
             for idx, resource in enumerate(self.resources):
                 resource_type = "Directory" if resource.is_directory else "File"
                 owner = "You" if resource.owner == self.discovery.username else resource.owner
+                
+                # Handle access field
                 access = "Everyone" if resource.shared_to_all else ", ".join(resource.allowed_users) or "Only owner"
-                if len(access) > 12:
-                    access = access[:9] + "..."
+                
                 shared_date = resource.timestamp.strftime("%Y-%m-%d %H:%M")
                 
                 # Format modification time
@@ -218,30 +239,64 @@ class FileShareView:
                     mod_time = "Unknown"
                 
                 name = os.path.basename(resource.path)
-                if len(name) > 20:
-                    name = name[:17] + "..."
                 
                 # Apply selection highlight if this is the selected item
                 style_prefix = "class:selected " if idx == self.selected_index else ""
                 
-                text.extend([
-                    ("", "  "),
-                    ("class:border", "│"),
-                    (f"{style_prefix}class:resource_id", f" {resource.id[:7]:<8} "),
-                    (f"{style_prefix}class:resource_type", f"{resource_type:<10} "),
-                    (f"{style_prefix}", f"{name:<20} "),
-                    (f"{style_prefix}class:{'owner' if owner == 'You' else 'peer'}", f"{owner:<12} "),
-                    (f"{style_prefix}class:access", f"{access:<12} "),
-                    (f"{style_prefix}class:date", f"{shared_date:<16} "),
-                    (f"{style_prefix}class:date", f"{mod_time:<25}"),
-                    ("class:border", "│"),
-                    ("", "\n")
-                ])
+                # Break text into multiple lines for all fields that might need it
+                id_lines = self._break_text(resource.id, max_length=col_widths['id'])
+                name_lines = self._break_text(name, max_length=col_widths['name'])
+                owner_lines = self._break_text(owner, max_length=col_widths['owner'])
+                access_lines = self._break_text(access, max_length=col_widths['access'])
+                
+                # Get the maximum number of lines needed for this entry
+                max_lines = max(
+                    len(id_lines),
+                    len(name_lines),
+                    len(owner_lines),
+                    len(access_lines),
+                    1  # Always at least one line
+                )
+                
+                # Format the resource entry with proper line breaks for all fields
+                for i in range(max_lines):
+                    id_part = id_lines[i] if i < len(id_lines) else " " * col_widths['id']
+                    name_part = name_lines[i] if i < len(name_lines) else " " * col_widths['name'] 
+                    owner_part = owner_lines[i] if i < len(owner_lines) else " " * col_widths['owner']
+                    access_part = access_lines[i] if i < len(access_lines) else " " * col_widths['access']
+                    
+                    # Only show type and dates on the first line
+                    type_part = resource_type if i == 0 else " " * col_widths['type']
+                    shared_part = shared_date if i == 0 else " " * col_widths['shared']
+                    mod_part = mod_time if i == 0 else " " * col_widths['modified']
+                    
+                    row_content = (
+                        f" {id_part:<{col_widths['id']}} {type_part:<{col_widths['type']}} {name_part:<{col_widths['name']}} "
+                        f"{owner_part:<{col_widths['owner']}} {access_part:<{col_widths['access']}} {shared_part:<{col_widths['shared']}} "
+                        f"{mod_part:<{col_widths['modified']}} "
+                    )
+                    
+                    resource_entry = [
+                        ("", "  "),
+                        ("class:border", " "),
+                        (f"{style_prefix}class:resource_id", f" {id_part:<{col_widths['id']}} "),
+                        (f"{style_prefix}class:resource_type", f"{type_part:<{col_widths['type']}} "),
+                        (f"{style_prefix}", f"{name_part:<{col_widths['name']}} "),
+                        (f"{style_prefix}class:{'owner' if 'You' in owner else 'peer'}", f"{owner_part:<{col_widths['owner']}} "),
+                        (f"{style_prefix}class:access", f"{access_part:<{col_widths['access']}} "),
+                        (f"{style_prefix}class:date", f"{shared_part:<{col_widths['shared']}} "),
+                        (f"{style_prefix}class:date", f"{mod_part:<{col_widths['modified']}} "),  # Added space at the end for consistent padding
+                        ("class:border", " "),
+                        ("", "\n")
+                    ]
+                    
+                    # Add the resource entry to the text
+                    text.extend(resource_entry)
         
         # Footer
         text.extend([
             ("", "  "),
-            ("class:border", "╰" + "─" * 110 + "╯"),  # Increased width to 110
+            ("class:border", "╰" + "─" * border_width + "╯"),
             ("", "\n\n"),
             ("class:help", "  Commands (type and press Enter):\n"),
             ("class:help", "    [s] or [share] Share file/directory   [a] or [add] Add user access    [r] or [remove] Remove user access\n"),
@@ -267,7 +322,16 @@ class FileShareView:
                 text.append(("class:history", f"  • {msg}\n"))
         
         return text
-    
+
+    def _break_text(self, text, max_length):
+        """Break text into multiple lines if it exceeds the max_length."""
+        lines = []
+        while len(text) > max_length:
+            lines.append(text[:max_length])
+            text = text[max_length:]
+        lines.append(text)
+        return lines
+
     def _process_command(self, command):
         """Process command input.
         
