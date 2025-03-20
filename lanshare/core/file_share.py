@@ -368,8 +368,13 @@ class FileShareManager:
                 ftp_password=self.default_password
             )
             
-            # Create symlink or copy file in user's share directory
+            # Get the actual directory/file name (not '.' or '..')
             resource_name = os.path.basename(path)
+            # For special cases like '.' or '..', use the actual directory name
+            if resource_name in ['.', '..']:
+                resource_name = os.path.basename(os.path.abspath(path))
+                self.debug_log(f"Special path detected. Using actual directory name: {resource_name}")
+            
             target_path = self.user_share_dir / resource_name
             
             # Handle name conflicts by appending a number
@@ -396,7 +401,7 @@ class FileShareManager:
             
             # Announce to peers
             self._announce_resource(resource)
-            self.debug_log(f"Shared {'directory' if is_directory else 'file'}: {path}")
+            self.debug_log(f"Shared {'directory' if is_directory else 'file'}: {path} as {resource_name}")
             return resource
         except Exception as e:
             self.debug_log(f"Error sharing resource: {e}")
@@ -455,19 +460,47 @@ class FileShareManager:
             resource: The resource to announce.
         """
         try:
+            # Update resource path if it's a special case like '.' or '..'
+            original_path = resource.path
+            basename = os.path.basename(original_path)
+            if basename in ['.', '..']:
+                # Get the actual directory name instead of '.' or '..'
+                actual_dirname = os.path.basename(os.path.abspath(original_path))
+                # Create a copy of the resource to avoid modifying the original
+                modified_resource = SharedResource(
+                    owner=resource.owner,
+                    path=os.path.join(os.path.dirname(original_path), actual_dirname),
+                    is_directory=resource.is_directory,
+                    shared_to_all=resource.shared_to_all,
+                    ftp_password=resource.ftp_password
+                )
+                modified_resource.id = resource.id
+                modified_resource.allowed_users = resource.allowed_users.copy()
+                modified_resource.timestamp = resource.timestamp
+                modified_resource.modified_time = resource.modified_time
+                
+                # Use the modified resource for announcement
+                resource_to_announce = modified_resource
+                self.debug_log(f"Announcing with normalized path: {modified_resource.path} instead of {original_path}")
+            else:
+                resource_to_announce = resource
+            
             packet = {
                 'type': 'file_share',
                 'action': 'announce',
-                'data': resource.to_dict()
+                'data': resource_to_announce.to_dict()
             }
             
             # Broadcast to all peers
             self.discovery.udp_socket.sendto(
                 json.dumps(packet).encode(),
                 ('<broadcast>', self.config.port)
-            )    
+            )
+            self.debug_log(f"Announced resource: {os.path.basename(resource_to_announce.path)}")
         except Exception as e:
             self.discovery.debug_print(f"Error announcing resource: {e}")
+            import traceback
+            self.discovery.debug_print(f"Traceback: {traceback.format_exc()}")
     
     def update_resource_access(self, resource_id: str, username: str, add: bool = True) -> bool:
         """Update access permissions for a shared resource.
