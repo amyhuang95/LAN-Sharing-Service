@@ -42,7 +42,6 @@ class MessageView:
         self.kb = KeyBindings()
 
         @self.kb.add('c-c')
-        @self.kb.add('q')
         def _(event):
             self.running = False
             event.app.exit()
@@ -68,6 +67,8 @@ class MessageView:
             'message-box-self': '#00aa00',  # Green for user message boxes (unchanged)
             'message-box-peer': '#0000ff',  # Blue for peer message boxes (unchanged)
             'message-content': '#ffffff',   # White for message content
+            'input-box': 'bg:#222222 #ffffff', # Styled input box
+            'box-border': '#5555ff',       # Blue for box borders
         })
 
     def _create_stylish_header(self, title):
@@ -176,7 +177,7 @@ class MessageView:
         terminal_width = shutil.get_terminal_size().columns - 2  # Subtract a bit for margins
         
         # Create stylish header
-        title = f"Conversation with {self.recipient}" if self.recipient else "Message List"
+        title = f"Conversation with {self.recipient} (Ctrl+C to Quit)" if self.recipient else "Message List"
         header = self._create_stylish_header(title)
         
         # Format each message
@@ -194,19 +195,12 @@ class MessageView:
             empty_msg = empty_msg.replace("[/]", "</info>")
             message_html += empty_msg + "\n\n"
         
-        # Add input prompt if in direct message mode
+        # Add footer note only for message list view
         footer = ""
-        if self.recipient:
+        if not self.recipient:
             footer_io = io.StringIO()
             footer_console = Console(file=footer_io, width=terminal_width, highlight=False)
-            footer_console.print("[bold bright_red]Type your message (Enter to send, Ctrl-C to exit)> [/]", end="")
-            footer = footer_io.getvalue()
-            footer = footer.replace("[bold bright_red]", "<prompt>")
-            footer = footer.replace("[/]", "</prompt>")
-        else:
-            footer_io = io.StringIO()
-            footer_console = Console(file=footer_io, width=terminal_width, highlight=False)
-            footer_console.print("[italic bright_white dim]Press 'q' to exit[/]")
+            footer_console.print("[italic bright_white dim]Press Ctrl+C to exit[/]")
             footer = footer_io.getvalue()
             footer = footer.replace("[italic bright_white dim]", "<info>")
             footer = footer.replace("[/]", "</info>")
@@ -280,7 +274,7 @@ class MessageView:
         # Render the table to string
         console.print(table)
         console.print()  # Empty line
-        console.print("[italic bright_white dim]Press 'q' to exit[/]")
+        console.print("[italic bright_white dim]Press Ctrl+C to exit[/]")
         
         # Convert the Rich output to HTML that prompt_toolkit can use
         rich_output = string_io.getvalue()
@@ -354,22 +348,75 @@ class MessageView:
             allow_scroll_beyond_bottom=True
         )
 
-        # Add input window if in conversation mode
+        # Add input window with a styled box if in conversation mode
         if self.recipient:
-            input_window = Window(
+            # Create a styled input window with border that wraps text
+            input_field = Window(
                 content=BufferControl(
                     buffer=self.message_buffer,
                     focusable=True
                 ),
-                height=1,
-                dont_extend_height=True
+                dont_extend_height=True,
+                wrap_lines=True  # Enable text wrapping
             )
+            
+            # Create a prompt label for the input box
+            prompt_window = Window(
+                content=FormattedTextControl("> "),
+                dont_extend_height=True,
+                width=2  # Fixed width for the prompt
+            )
+            
+            # Get terminal width for proper sizing
+            import shutil
+            terminal_width = shutil.get_terminal_size().columns - 4  # Subtract margin
+            
+            # Create the input area with proper width constraints to ensure wrapping
+            input_area = VSplit([
+                prompt_window,
+                # Constrain the width to force wrapping
+                Window(
+                    content=BufferControl(
+                        buffer=self.message_buffer,
+                        focusable=True
+                    ),
+                    wrap_lines=True,  # Enable text wrapping
+                    width=terminal_width - 8  # Account for borders and padding
+                )
+            ])
+            
+            # Create a fully bordered input box with padding
+            input_container = HSplit([
+                # Add some space above the input box
+                Window(height=1),
+                
+                # Top border of input box
+                Window(height=1, char="═", style="class:box-border"),
+                # Input area with left and right borders
+                VSplit([
+                    # Left border
+                    Window(width=1, char=" ", style="class:box-border"),
+                    # Left padding
+                    Window(width=1, char=" "),
+                    # Input area with prompt and field (constrained width)
+                    input_area,
+                    # Right padding
+                    Window(width=1, char=" "),
+                    # Right border
+                    Window(width=1, char=" ", style="class:box-border")
+                ]),
+                # Bottom border of input box
+                Window(height=1, char="═", style="class:box-border")
+            ])
+            
+            # Create the main layout with message area and input box
             layout = Layout(HSplit([
                 message_window,
-                input_window
+                input_container
             ]))
-            # Ensure input window gets focus
-            layout.focus(input_window)
+            
+            # Ensure input field gets focus
+            layout.focus(input_area.children[1])  # Focus the input field part
         else:
             layout = Layout(message_window)
 
