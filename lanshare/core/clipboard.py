@@ -13,7 +13,7 @@ import threading
 
 class Clipboard:
 
-    def __init__(self, discovery: UDPPeerDiscovery, config: Config, activate: bool):
+    def __init__(self, discovery: UDPPeerDiscovery, config: Config):
         """Initialize the Clipboard synchronization service.
         This constructor sets up the clipboard service that allows sharing clipboard content
         between peers on a local network.
@@ -30,7 +30,6 @@ class Clipboard:
             send_to_peers (set): Set of peers to which local clipboard content will be sent.
             receive_from_peers (set): Set of peers from which remote clipboard content will be accepted.
             username (str): Username obtained from the discovery service.
-            in_live_view (bool): Flag indicating if the clipboard is currently being viewed live.
             udp_socket (socket.socket): UDP socket used for sending/receiving clipboard content.
             clip_list (List[Clip]): List to track recent clipboard items.
             max_clips (int): Maximum number of clipboard items to retain in history.
@@ -45,28 +44,29 @@ class Clipboard:
         self.discovery = discovery # to get a list of active peers's address
         self.username = self.discovery.username
         self.config = config # debug print & service port
-        self.in_live_view = False
 
+        # Track recent clips
+        self.clip_list: List[Clip] = []
+        self.max_clips = 10
+        
+        # Default not start this service
+        self.running = False
+
+    def start(self) -> None:
+        """Start all services."""
         # Set up UDP socket
         self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.udp_socket.bind(('', self.config.clipboard_port))
         
-        # Track recent clips
-        self.clip_list: List[Clip] = []
-        self.max_clips = 20
-        
-        # Run the service if user activates it
-        self.activate = activate
-        self.running = True if activate else False
-
-    def start(self) -> None:
-        """Start all services."""
+        self.running = True
         self._start_threads()
 
     def stop(self) -> None:
         """Stop all services."""
         self.running = False
+        self.send_to_peers.clear()
+        self.receive_from_peers.clear()
         self.udp_socket.close()
     
     def _start_threads(self) -> None:
@@ -85,9 +85,7 @@ class Clipboard:
         Args: 
             message: information to be printed in the terminal.
         """
-        self.config.load_config()
-        if self.config.debug and not self.in_live_view:
-            self.config.add_debug_message(f"📋 Clipboard - {message}")
+        self.discovery.debug_print(f"📋 Clipboard - {message}")
 
     def _listen_for_local_clip(self) -> None:
         """Listen for new locally-copied content."""
@@ -150,14 +148,24 @@ class Clipboard:
         Args:
             clip (Clip): The clipboard object containing the content and metadata from remote peer
         """
+        # Check if sender is in receiving list
         if clip.source not in self.receive_from_peers:
             self.debug_print(f"Sender not in accepted peers list")
             return
+        
         with self.clipboard_lock:
             self.curr_clip_content = clip.content # Update current clipboard content
             pyperclip.copy(clip.content)
             self.debug_print("Copied received content to local clipboard")
             self.add_to_clip_history(clip)
+
+    def _refresh_sharing_peers(self):
+        """
+        Refresh the list of peers to share clips with. Removes inactive peers from the list.
+        """
+        active_peers = set(self.discovery.list_peers())
+        self.send_to_peers = self.send_to_peers & active_peers
+        self.receive_from_peers = self.receive_from_peers & active_peers
 
     def send_clip(self, clip: Clip) -> None:
         """
@@ -189,28 +197,49 @@ class Clipboard:
         except Exception as e:
             self.debug_print(f"Error sending clip id {clip.id}: {e}")
 
-    def update_send_to_peers(self, peers: list[str]) -> None:
+    def add_sending_peer(self, peer: str) -> None:
         """
-        Update the list of peers that will receive local clipboard changes.
-        
-        This method replaces the current set of peers with a new set created from the provided list. 
-        Only these peers will receive clipboard updates from the local machine.
+        Add a peer to the list of peers to share clips with.
 
         Args:
-            peers (list[str]): A list of peer identifiers to send clipboard updates to.
-                              Each identifier should uniquely identify a peer in the network.
+            peer (str): username of the peer
         """
-        self.send_to_peers = set(peers)
-
-    def update_receive_from_peers(self, peers: list[str]) -> None:
+        active_peers = self.discovery.list_peers()
+        if peer in active_peers:
+            self.send_to_peers.add(peer)
+    
+    def remove_sending_peer(self, peer:str) -> None:
         """
-        Update the list of peers from which this node will accept remote clipboard data.
+        Remove a peer from the list of peers to share clips with.
 
         Args:
-            peers (list[str]): List of peer IDs that are allowed to send clipboard 
-                              content to this node. Duplicates will be automatically removed.
+            peer (str): username of the peer
         """
-        self.receive_from_peers = set(peers)
+        active_peers = self.discovery.list_peers()
+        if peer in active_peers:
+            self.send_to_peers.remove(peer)
+
+    def add_receiving_peer(self, peer: str) -> None:
+        """
+        Add a peer to the list of peers to accept clips from.
+
+        Args:
+            peer (str): username of the peer
+        """
+        active_peers = self.discovery.list_peers()
+        if peer in active_peers:
+            self.receive_from_peers.add(peer)
+    
+    def remove_receiving_peer(self, peer: str) -> None:
+        """
+        Remove a peer from the list of peers to accept clips from.
+
+        Args:
+            peer (str): username of the peer
+        """
+        active_peers = self.discovery.list_peers()
+        if peer in active_peers:
+            self.receive_from_peers.add(peer)
 
     def add_to_clip_history(self, clip: Clip) -> None:
         """
