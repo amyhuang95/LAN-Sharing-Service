@@ -307,7 +307,7 @@ Or use [command]all <resource_id> on[/] to share with everyone."""
                 return
 
             actions[direction][option](peer)
-            self.console.print(f"[success]✓ Now sharing clipboard {direction} [username]{peer}")
+            self.console.print(f"[success]✓ Updated sharing {direction} [username]{peer}")
         else:
             self.console.print(Panel("[warning]Usage: sc to|from <username> add|rm", 
                                      title="Command Help", 
