@@ -163,9 +163,11 @@ class Clipboard:
         """
         Refresh the list of peers to share clips with. Removes inactive peers from the list.
         """
-        active_peers = set(self.discovery.list_peers())
-        self.send_to_peers = self.send_to_peers & active_peers
-        self.receive_from_peers = self.receive_from_peers & active_peers
+        while self.running:
+            active_peers = set(self.discovery.list_peers())
+            self.send_to_peers = self.send_to_peers & active_peers
+            self.receive_from_peers = self.receive_from_peers & active_peers
+            time.sleep(1) # refresh every 1 second
 
     def send_clip(self, clip: Clip) -> None:
         """
@@ -215,9 +217,7 @@ class Clipboard:
         Args:
             peer (str): username of the peer
         """
-        active_peers = self.discovery.list_peers()
-        if peer in active_peers:
-            self.send_to_peers.remove(peer)
+        self.send_to_peers.remove(peer)
 
     def add_receiving_peer(self, peer: str) -> None:
         """
@@ -237,9 +237,7 @@ class Clipboard:
         Args:
             peer (str): username of the peer
         """
-        active_peers = self.discovery.list_peers()
-        if peer in active_peers:
-            self.receive_from_peers.add(peer)
+        self.receive_from_peers.remove(peer)
 
     def add_to_clip_history(self, clip: Clip) -> None:
         """
