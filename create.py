@@ -111,7 +111,6 @@ def main():
     parser = argparse.ArgumentParser(description='LAN Peer Discovery Service')
     parser.add_argument('command', choices=['create'], help='Command to execute')
     parser.add_argument('--username', help='Username for the peer', required=False)
-    parser.add_argument("-sc", "--share_clip", help="Enable clipboard sharing with peers", action="store_true")
     # This is the entry point to change differnet GUI
     parser.add_argument("--gui", choices=['terminal', 'streamlit'], default='terminal', 
                         help="Select GUI implementation (default: terminal)")
@@ -131,8 +130,7 @@ def main():
         discovery_service.start()
 
         # Start clipboard sharing service (default off unless user enables it with command line args)
-        clipboard = Clipboard(discovery_service, config, args.share_clip)
-        clipboard.start()
+        clipboard = Clipboard(discovery_service, config)
         
         # Start appropriate GUI based on user selection
         if args.gui == 'terminal':
