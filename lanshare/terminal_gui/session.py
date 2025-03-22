@@ -52,8 +52,8 @@ class InteractiveSession:
             'msg': self._send_message,
             'lm': self._list_messages,
             'om': self._open_message,
+            'clipboard': self._clipboard_activation,
             'sc': self._share_clipboard,
-            'rc': self._receive_clipboard,
             'share': self._share_file,
             'files': self._list_files,
             'access': self._manage_access,
@@ -248,81 +248,72 @@ Or use [command]all <resource_id> on[/] to share with everyone."""
             self.console.print(Panel("[danger]Failed to update sharing settings. Check that you own the resource and the resource ID is correct.", 
                                      title="Sharing Error", 
                                      border_style="red"))
-
-    def _share_clipboard(self, *args):
-        """Handle the sc command"""
-        if not args:
-            self.console.print(Panel("[warning]Usage: sc <username_1> <username_2> ...", 
-                                     title="Command Help", 
-                                     border_style="yellow"))
-            return
-
-        if not self.clipboard.activate:
-            self.console.print(Panel("[warning]Clipboard sharing is not activated.\nRestart the application with -sc flag for activation.", 
-                                     title="Feature Not Enabled", 
-                                     border_style="yellow"))
-            return
-
-        recipients = args
-        active_peers = self.discovery.list_peers()
-
-        # Check at least one requested recipient is online
-        at_least_one_online = False
-        offline_users = []
-        for recipient in recipients:
-            if recipient in active_peers:
-                at_least_one_online = True
-            else:
-                offline_users.append(recipient)
-                
-        if offline_users:
-            self.console.print(f"[warning]Users not found or offline: [highlight]{', '.join(offline_users)}")
             
-        if not at_least_one_online:
-            self.console.print("[danger]None of the provided peers is online")
-            return
-
-        self.clipboard.update_send_to_peers(recipients)
-        online_recipients = [r for r in recipients if r in active_peers]
-        self.console.print(f"[success]✓ Now sharing clipboard with: [username]{', '.join(online_recipients)}")
-    
-    def _receive_clipboard(self, *args):
-        """Handle the rc command"""
-        if not args:
-            self.console.print(Panel("[warning]Usage: rc <username_1> <username_2> ...", 
+    def _clipboard_activation(self, *args):
+        """Handle the clipboard on/off command"""
+        if not args or args[0].lower() not in ('on', 'off'):
+            self.console.print(Panel("[warning]Usage: clipboard on|off", 
                                      title="Command Help", 
-                                     border_style="yellow"))
-            return
-
-        if not self.clipboard.activate:
-            self.console.print(Panel("[warning]Clipboard sharing is not activated.\nRestart the application with -sc flag for activation.", 
-                                     title="Feature Not Enabled", 
                                      border_style="yellow"))
             return
         
-        senders = args
-        active_peers = self.discovery.list_peers()
-
-        # Check at least one requested sender is online
-        at_least_one_online = False
-        offline_users = []
-        for sender in senders:
-            if sender in active_peers:
-                at_least_one_online = True
+        option: str = args[0]
+        if option.lower() == 'on':
+            if self.clipboard.running:
+                self.console.print(f"[warning]Clipboard sharing already enabled.")
             else:
-                offline_users.append(sender)
-                
-        if offline_users:
-            self.console.print(f"[warning]Users not found or offline: [highlight]{', '.join(offline_users)}")
-            
-        if not at_least_one_online:
-            self.console.print("[danger]None of the provided peers is online")
+                self.clipboard.start()
+                self.console.print(f"[success]✓ Clipboard sharing activated. Edit peers to share clipboard using sc command")
+        elif option.lower() == 'off':
+            if self.clipboard.running:
+                self.clipboard.stop()
+                self.console.print(f"[success]✓ Clipboard sharing deactivated.")
+            else:
+                self.console.print(f"[warning]Clipboard sharing is not enabled")
+        
+
+    def _share_clipboard(self, *args):
+        """Handle the sc command"""
+        # Validat command
+        if len(args) < 3:
+            self.console.print(Panel("[warning]Usage: sc to|from <username> add|rm", 
+                                     title="Command Help", 
+                                     border_style="yellow"))
             return
 
-        self.clipboard.update_receive_from_peers(senders)
-        online_senders = [s for s in senders if s in active_peers]
-        self.console.print(f"[success]✓ Now receiving clipboard from: [username]{', '.join(online_senders)}")
+        if not self.clipboard.running:
+            self.console.print(Panel("[warning]Clipboard sharing is not activated.\nActivate clipboard sharing with 'clipboard on' command", 
+                                     title="Feature Not Enabled", 
+                                     border_style="yellow"))
+            return
 
+        direction = args[0].lower()
+        peer = args[1]
+        option = args[2]
+        active_peers = self.discovery.list_peers()
+
+        # Define actions for sending and receiving
+        actions = {
+            "to": {"add": self.clipboard.add_sending_peer, 
+                   "rm": self.clipboard.remove_sending_peer},
+            "from": {"add": self.clipboard.add_receiving_peer, 
+                     "rm": self.clipboard.remove_receiving_peer},
+        }
+
+        # Execute the corresponding function if valid
+        if direction in actions and option in actions[direction]:
+            # Check peer is online
+            if peer not in active_peers:
+                self.console.print(f"[warning]User not found or offline: [highlight]{peer}")
+                return
+
+            actions[direction][option](peer)
+            self.console.print(f"[success]✓ Updated sharing {direction} [username]{peer}")
+        else:
+            self.console.print(Panel("[warning]Usage: sc to|from <username> add|rm", 
+                                     title="Command Help", 
+                                     border_style="yellow"))
+             
     def _manage_registry(self, *args):
         """Handle the registry command for alternative peer discovery."""
         if not args:
@@ -418,8 +409,8 @@ Or use [command]all <resource_id> on[/] to share with everyone."""
         help_table.add_row("files", "List and manage shared files", "files")
         help_table.add_row("access", "Manage access to shared resources", "access resource_id username add|rm")
         help_table.add_row("all", "Share resource with everyone", "all resource_id on|off")
-        help_table.add_row("sc", "Share clipboard with peers", "sc username1 username2")
-        help_table.add_row("rc", "Receive clipboard from peers", "rc username1 username2")
+        help_table.add_row("clipboard", "Activate/deactivate clipboard sharing", "clipboard on|off")
+        help_table.add_row("sc", "Add peers to share clips to or receive clips from", "sc to|from username add|rm")
         help_table.add_row("registry", "Manage registry connection for restricted networks", 
                            "registry connect 192.168.1.5:5000")
         help_table.add_row("debug", "Toggle debug mode", "debug")
