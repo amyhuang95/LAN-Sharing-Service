@@ -1,5 +1,7 @@
-prompt-toolkit>=3.0.0,<4.0.0  # For interactive terminal UI
-typing-extensions>=4.0.0  # For type hints in Python 3.7+
+prompt-toolkit>=3.0.0,<4.0.0 # For interactive terminal UI
+typing-extensions>=4.0.0 # For type hints in Python 3.7+
 pyftpdlib>=2.0.1 # For FTP file sharing
-pyperclip # For clipboard management (Windows/MacOS/Linux) 
-rich>=10.0.0  # For enhanced terminal UI
+pyperclip # For clipboard management (Windows/MacOS/Linux)
+rich>=10.0.0 # For enhanced terminal UI
+flask>=2.0.0 # For registry server
+requests>=2.25.0 # For registry client communication

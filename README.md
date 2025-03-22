@@ -21,8 +21,8 @@ A local-area-network (LAN) sharing service that shares files and clipboards acro
   - [lm/om](#debug-view-debug)
 - [GUI](#iter1-basic-commands---peer-discovery--message)
   - [gui=terminal](#user-list-ul)
+- [Registry Server/Client](#iter1-basic-commands---peer-discovery--message)
 - [Auto-Complete](#iter1-basic-commands---peer-discovery--message)
-  - [gui=terminal](#user-list-ul)
 
 
 

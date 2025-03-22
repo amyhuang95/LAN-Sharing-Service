@@ -114,6 +114,9 @@ def main():
     # This is the entry point to change differnet GUI
     parser.add_argument("--gui", choices=['terminal', 'streamlit'], default='terminal', 
                         help="Select GUI implementation (default: terminal)")
+    # Add port option with default value of 12345 (the original port)
+    parser.add_argument("--port", type=int, default=12345, 
+                        help="Set custom port for UDP discovery and file sharing (default: 12345)")
     
     args = parser.parse_args()
     
@@ -126,6 +129,11 @@ def main():
         
         # Start the service
         config = Config()
+        # Set the custom port if specified
+        config.port = args.port
+        # Update clipboard port to be one higher than the main port
+        config.clipboard_port = args.port + 1
+        
         discovery_service = UDPPeerDiscovery(username_with_id, config)
         discovery_service.start()
 
