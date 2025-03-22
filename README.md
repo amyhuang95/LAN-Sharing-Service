@@ -1,5 +1,5 @@
 # LAN Sharing Service
-A local-area-network (LAN) sharing service that shares files and clipboards across different devices in local area network, essientially, it means transferring files directly between devices on the same network without going through the internet. 
+A local-area-network (LAN) sharing service that shares files and clipboards across different devices in local area network with access level, essientially, it means transferring files directly between devices on the same network without going through the internet. 
 
 
 ## CUJ
@@ -172,10 +172,16 @@ evan-dayy#208b@LAN(192.168.4.141)#
 ```
 
 ## Registry Server Mode
+
+Background: In enterprise-grade internet (eduroam), broadcasting message is highly restricted from one peer to another peer. In addition to the previous introduction of Laptop Hotpot (the one we discussed in the classroom), registry server is a much easier alternative to resolve the issue.
+
+What is it? A centralized server that record registered users' private IP and port numbers;
+### Start the Registry Server
 ```
 python registry_server.py --port 5050
 ```
 
+### Peer register to the Registry Server
 ```
 evan-dayy#208b@LAN(192.168.4.141)# registry
 ╭─────────────────────────────────────── Registry Status ───────────────────────────────────────╮
@@ -204,3 +210,15 @@ Now discovering peers via both UDP broadcast and registry server
 │                                                              ││                               │
 ╰──────────────────────────────────────────────────────────────╯╰───────────────────────────────╯
 ```
+
+### Peer unregister the Registry Server or Check Status
+```
+evan-dayy#729a@LAN(192.168.4.141)# registry disconnect
+Disconnecting from registry server at http://192.168.4.141:5050...
+✓ Successfully disconnected from registry server
+Now using UDP broadcast discovery only
+
+evan-dayy#729a@LAN(192.168.4.141)# registry status
+Not using registry server. Currently in UDP broadcast discovery mode.
+```
+
