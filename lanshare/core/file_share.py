@@ -427,14 +427,39 @@ class FileShareManager:
                 'data': resource.to_dict()
             }
             
-            # Broadcast to all peers
-            self.discovery.udp_socket.sendto(
-                json.dumps(packet).encode(),
-                ('<broadcast>', self.config.port)
-            )    
+            # Send via broadcast (for broadcast-discovered peers)
+            try:
+                self.discovery.udp_socket.sendto(
+                    json.dumps(packet).encode(),
+                    ('<broadcast>', self.config.port)
+                )
+                self.discovery.debug_print(f"Broadcast resource announcement for {resource.id}")
+            except Exception as e:
+                self.discovery.debug_print(f"Error broadcasting resource announcement: {e}")
+            
+            # Also send directly to all registry-discovered peers
+            # This ensures registry peers get the announcement even in networks where broadcast is blocked
+            peers = self.discovery.list_peers()
+            for username, peer in peers.items():
+                # Only send direct announcements to registry-discovered peers
+                if not hasattr(peer, 'registry_peer') or not peer.registry_peer:
+                    continue
+                    
+                # Get their specific port
+                target_port = getattr(peer, 'port', self.discovery.config.port)
+                
+                try:
+                    self.discovery.udp_socket.sendto(
+                        json.dumps(packet).encode(),
+                        (peer.address, target_port)
+                    )
+                    self.discovery.debug_print(f"Sent direct resource announcement to registry peer {username} at {peer.address}:{target_port}")
+                except Exception as e:
+                    self.discovery.debug_print(f"Error sending direct announcement to {username}: {e}")
+                    
         except Exception as e:
-            self.discovery.debug_print(f"Error announcing resource: {e}")
-    
+            self.discovery.debug_print(f"Error in resource announcement: {e}")
+            
     def update_resource_access(self, resource_id: str, username: str, add: bool = True) -> bool:
         """Update access permissions for a shared resource.
         Args:
@@ -532,6 +557,17 @@ class FileShareManager:
             # Skip if we're the owner
             if resource.owner == self.username:
                 return
+                
+            # Get the owner's peer info to get the correct port
+            owner_peer = self.discovery.peers.get(resource.owner)
+            
+            # If we have the peer info, extract the actual port for FTP
+            owner_port = None
+            if owner_peer:
+                owner_port = getattr(owner_peer, 'port', None)
+                if owner_port is not None:
+                    owner_port += 1  # FTP port is base port + 1
+            
             # Check if we already have this resource
             existing_resource = self.received_resources.get(resource.id)
             # If we had the resource but no longer have access, remove it
@@ -564,10 +600,10 @@ class FileShareManager:
                         if resource.id in self.downloaded_resources:
                             self.downloaded_resources.remove(resource.id)
                         
-                        # Download the updated resource
+                        # Download the updated resource with correct port
                         download_thread = threading.Thread(
                             target=self._download_resource,
-                            args=(resource, addr[0])
+                            args=(resource, addr[0], owner_port)
                         )
                         download_thread.daemon = True
                         download_thread.start()
@@ -586,7 +622,7 @@ class FileShareManager:
                     if resource.id not in self.downloaded_resources:
                         download_thread = threading.Thread(
                             target=self._download_resource,
-                            args=(resource, addr[0])
+                            args=(resource, addr[0], owner_port)
                         )
                         download_thread.daemon = True
                         download_thread.start()
@@ -597,14 +633,33 @@ class FileShareManager:
             self.discovery.debug_print(f"Error handling resource announcement: {e}")
         
 
-    def _download_resource(self, resource: SharedResource, host_ip: str) -> None:
+    def _download_resource(self, resource: SharedResource, host_ip: str, port: int = None) -> None:
         """Download a resource from a peer.
         Args:
             resource: The resource to download.
             host_ip: The IP address of the host.
+            port: Optional specific port to use for FTP connection.
         """
         try:
-            self.debug_log(f"Downloading {os.path.basename(resource.path)} from {host_ip}...")
+            # Get owner's peer information
+            owner_peer = self.discovery.peers.get(resource.owner)
+            
+            # Determine the FTP port to use with improved logic
+            if port is not None:
+                # If port is explicitly provided, use it
+                ftp_port = port
+                self.debug_log(f"Using explicitly provided port: {ftp_port}")
+            elif owner_peer is not None:
+                # If we have peer information, use their base port + 1 for FTP
+                base_port = getattr(owner_peer, 'port', self.discovery.config.port)
+                ftp_port = base_port + 1
+                self.debug_log(f"Using peer's base port + 1 for FTP: {base_port} + 1 = {ftp_port}")
+            else:
+                # Fallback to default FTP port
+                ftp_port = self.ftp_address[1]
+                self.debug_log(f"Using default FTP port: {ftp_port}")
+            
+            self.debug_log(f"Downloading {os.path.basename(resource.path)} from {host_ip} using port {ftp_port}...")
             
             # Create destination path
             dest_dir = self.share_dir / resource.owner
@@ -619,9 +674,9 @@ class FileShareManager:
                 
                 self.debug_log(f"Removed old version of {dest_path}")
             
-            # Create FTP connection
+            # Create FTP connection with correct port
             ftp = ftplib.FTP()
-            ftp.connect(host_ip, self.ftp_address[1])
+            ftp.connect(host_ip, ftp_port)
             
             # Keep encoding as UTF-8 for command channel
             ftp.encoding = 'utf-8'  # Changed from None to 'utf-8'
@@ -740,7 +795,7 @@ class FileShareManager:
             # Log the full exception traceback for better debugging
             import traceback
             self.debug_log(f"Traceback: {traceback.format_exc()}")
-
+        
     def _download_directory_recursive(self, ftp, remote_dir, local_dir):
         """Download a directory recursively.
         Args:

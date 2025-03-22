@@ -117,14 +117,27 @@ class CommandCompleter(Completer):
         # Define which commands need username completion for their arguments
         self.user_arg_commands = {
             'msg': 0,      # msg <username>
-            'sc': range(0, 10),  # sc <username> [<username>...]
-            'rc': range(0, 10),  # rc <username> [<username>...]
+            'sc': [1],     # sc to|from <username> add|rm
             'access': 1,   # access <resource_id> <username> add|rm
         }
         
         # Define which commands need path completion
         self.path_arg_commands = {
             'share': 0,  # share <path>
+        }
+
+        # Commands with specific first argument choices
+        self.first_arg_choices = {
+            'sc': ['to', 'from'],  # sc to|from <username> add|rm
+            'clipboard': ['on', 'off'],  # clipboard on|off
+            'registry': ['connect', 'disconnect', 'status'],  # registry connect|disconnect|status
+        }
+
+        # Commands with specific final argument choices
+        self.final_arg_choices = {
+            'sc': ['add', 'rm'],  # sc to|from <username> add|rm
+            'access': ['add', 'rm'],  # access <resource_id> <username> add|rm
+            'all': ['on', 'off'],  # all <resource_id> on|off
         }
         
     def get_completions(self, document: Document, complete_event) -> Iterable[Completion]:
@@ -167,6 +180,17 @@ class CommandCompleter(Completer):
             command = words[0]
             arg_position = len(words)
             
+            # Handle first argument choices for specific commands
+            if arg_position == 1 and command in self.first_arg_choices:
+                for choice in self.first_arg_choices[command]:
+                    yield Completion(
+                        choice,
+                        start_position=0,
+                        display=choice,
+                        display_meta=f"{command} option"
+                    )
+                return
+            
             # Handle resource ID suggestions for access and all commands
             if command == 'access' and arg_position == 1:
                 # Getting resource IDs
@@ -196,6 +220,39 @@ class CommandCompleter(Completer):
                     )
                 return
             
+            # Handle clipboard (sc) command's special structure
+            if command == 'sc':
+                if arg_position == 1:
+                    # Direction options
+                    for option in ['to', 'from']:
+                        yield Completion(
+                            option,
+                            start_position=0,
+                            display=option,
+                            display_meta="Clipboard direction"
+                        )
+                    return
+                elif arg_position == 2:
+                    # Username suggestion for 'sc to/from <username>'
+                    for username in self.discovery.list_peers():
+                        yield Completion(
+                            username,
+                            start_position=0,
+                            display=username,
+                            display_meta="User"
+                        )
+                    return
+                elif arg_position == 3:
+                    # Add/Remove options
+                    for option in ['add', 'rm']:
+                        yield Completion(
+                            option,
+                            start_position=0,
+                            display=option,
+                            display_meta="Clipboard action"
+                        )
+                    return
+            
             # Check if we need username completion for this position
             if command in self.user_arg_commands:
                 positions = self.user_arg_commands[command]
@@ -209,8 +266,8 @@ class CommandCompleter(Completer):
                             display_meta="User"
                         )
                     return
-                elif isinstance(positions, range) and arg_position - 1 in positions:
-                    # Range of positions
+                elif isinstance(positions, list) and arg_position - 1 in positions:
+                    # List of positions
                     for username in self.discovery.list_peers():
                         yield Completion(
                             username,
@@ -227,25 +284,38 @@ class CommandCompleter(Completer):
                 yield from self.path_completer.get_completions(empty_doc, complete_event)
                 return
             
-            # Access command's 3rd argument (add/rm)
-            if command == 'access' and arg_position == 3:
-                for option in ['add', 'rm']:
-                    yield Completion(
-                        option,
-                        start_position=0,
-                        display=option
-                    )
-                return
-            
-            # All command's 2nd argument (on/off)
-            if command == 'all' and arg_position == 2:
-                for option in ['on', 'off']:
-                    yield Completion(
-                        option,
-                        start_position=0,
-                        display=option
-                    )
-                return
+            # Check for final argument choices
+            if command in self.final_arg_choices:
+                # For sc, the final argument is at position 3 (sc to|from <username> add|rm)
+                if command == 'sc' and arg_position == 3:
+                    for option in self.final_arg_choices[command]:
+                        yield Completion(
+                            option,
+                            start_position=0,
+                            display=option,
+                            display_meta=f"{command} action"
+                        )
+                    return
+                # For access, the final argument is at position 3 (access <resource_id> <username> add|rm)
+                elif command == 'access' and arg_position == 3:
+                    for option in self.final_arg_choices[command]:
+                        yield Completion(
+                            option,
+                            start_position=0,
+                            display=option,
+                            display_meta=f"{command} action"
+                        )
+                    return
+                # For all, the final argument is at position 2 (all <resource_id> on|off)
+                elif command == 'all' and arg_position == 2:
+                    for option in self.final_arg_choices[command]:
+                        yield Completion(
+                            option,
+                            start_position=0,
+                            display=option,
+                            display_meta=f"{command} option"
+                        )
+                    return
         
         # Handle completion within an argument (not at the start of a new one)
         command = words[0]
@@ -288,6 +358,18 @@ class CommandCompleter(Completer):
                         display_meta=display_meta
                     )
             return
+        
+        # Handle first argument for 'sc' and other commands with specific choices
+        if arg_position == 1 and command in self.first_arg_choices:
+            for choice in self.first_arg_choices[command]:
+                if choice.startswith(word_before_cursor):
+                    yield Completion(
+                        choice,
+                        start_position=-len(word_before_cursor),
+                        display=choice,
+                        display_meta=f"{command} option"
+                    )
+            return
             
         # Check if we need username completion for this command and position
         if command in self.user_arg_commands:
@@ -296,8 +378,8 @@ class CommandCompleter(Completer):
                 # Single position specified
                 yield from self.user_completer.get_completions(current_word_document, complete_event)
                 return
-            elif isinstance(positions, range) and arg_position - 1 in positions:
-                # Range of positions
+            elif isinstance(positions, list) and arg_position - 1 in positions:
+                # List of positions
                 yield from self.user_completer.get_completions(current_word_document, complete_event)
                 return
                 
@@ -309,6 +391,35 @@ class CommandCompleter(Completer):
             yield from self.path_completer.get_completions(path_document, complete_event)
             return
         
+        # Handle sc command's special structure for completion
+        if command == 'sc':
+            if arg_position == 1:
+                # Direction options (to/from)
+                for option in ['to', 'from']:
+                    if option.startswith(word_before_cursor):
+                        yield Completion(
+                            option,
+                            start_position=-len(word_before_cursor),
+                            display=option,
+                            display_meta="Clipboard direction"
+                        )
+                return
+            elif arg_position == 2:
+                # Username for 'sc to/from <username>'
+                yield from self.user_completer.get_completions(current_word_document, complete_event)
+                return
+            elif arg_position == 3:
+                # Add/Remove options
+                for option in ['add', 'rm']:
+                    if option.startswith(word_before_cursor):
+                        yield Completion(
+                            option,
+                            start_position=-len(word_before_cursor),
+                            display=option,
+                            display_meta="Clipboard action"
+                        )
+                return
+        
         # For any other case, provide command-specific completions
         if command == 'access' and arg_position == 3:
             # Complete add/rm for access command
@@ -317,7 +428,8 @@ class CommandCompleter(Completer):
                     yield Completion(
                         option,
                         start_position=-len(word_before_cursor),
-                        display=option
+                        display=option,
+                        display_meta="Access action"
                     )
             return
             
@@ -328,6 +440,31 @@ class CommandCompleter(Completer):
                     yield Completion(
                         option,
                         start_position=-len(word_before_cursor),
-                        display=option
+                        display=option,
+                        display_meta="Share option"
+                    )
+            return
+            
+        if command == 'clipboard' and arg_position == 1:
+            # Complete on/off for the clipboard command
+            for option in ['on', 'off']:
+                if option.startswith(word_before_cursor):
+                    yield Completion(
+                        option,
+                        start_position=-len(word_before_cursor),
+                        display=option,
+                        display_meta="Clipboard option"
+                    )
+            return
+            
+        if command == 'registry' and arg_position == 1:
+            # Complete registry commands
+            for option in ['connect', 'disconnect', 'status']:
+                if option.startswith(word_before_cursor):
+                    yield Completion(
+                        option,
+                        start_position=-len(word_before_cursor),
+                        display=option,
+                        display_meta="Registry command"
                     )
             return
