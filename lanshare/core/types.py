@@ -13,29 +13,26 @@ class Peer:
         address: The IP address of the peer.
         last_seen: The last time the peer was seen.
         first_seen: The first time the peer was seen.
+        registry_peer: Whether this peer was discovered via a registry server.
     """
 
     username: str
     address: str
     last_seen: datetime
     first_seen: datetime
+    registry_peer: bool = False  # Discovered via registry
+    broadcast_peer: bool = True  # Discovered via broadcast (default)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'Peer':
-        """Create an instance of Peer from a dictionary.
-
-        Args:
-            data: A dictionary containing the keys with corresponding values of a peer.
-        
-        Returns:
-            An instance of the Peer class populated with the data from the dictionary.
-        """
-
+        """Create an instance of Peer from a dictionary."""
         return cls(
             username=data['username'],
             address=data['address'],
             last_seen=data['last_seen'],
-            first_seen=data['first_seen']
+            first_seen=data['first_seen'],
+            registry_peer=data.get('registry_peer', False),
+            broadcast_peer=data.get('broadcast_peer', True)
         )
         
 @dataclass

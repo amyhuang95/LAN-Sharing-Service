@@ -58,6 +58,7 @@ class InteractiveSession:
             'files': self._list_files,
             'access': self._manage_access,
             'all': self._share_with_all,
+            'registry': self._manage_registry,
             'help': self.show_help,
             'clear': self.clear_screen,
             'exit': self.exit_session,
@@ -322,6 +323,85 @@ Or use [command]all <resource_id> on[/] to share with everyone."""
         online_senders = [s for s in senders if s in active_peers]
         self.console.print(f"[success]✓ Now receiving clipboard from: [username]{', '.join(online_senders)}")
 
+    def _manage_registry(self, *args):
+        """Handle the registry command for alternative peer discovery."""
+        if not args:
+            # Show current registry status
+            if self.discovery.is_using_registry():
+                server_url = self.discovery.get_registry_server_url()
+                self.console.print(Panel(
+                    f"[success]✓ Currently registered with registry server:[/]\n[highlight]{server_url}[/]\n\n"
+                    f"To unregister, use: [command]registry disconnect[/]",
+                    title="Registry Status",
+                    border_style="green"
+                ))
+            else:
+                self.console.print(Panel(
+                    "[info]Not using registry server. Currently in UDP broadcast discovery mode.[/]\n\n"
+                    "To connect to a registry server, use: [command]registry connect <server_url>[/]\n"
+                    "Example: [command]registry connect 192.168.1.5:5000[/]",
+                    title="Registry Status",
+                    border_style="blue"
+                ))
+            return
+
+        # Process commands
+        command = args[0].lower()
+
+        if command == "connect":
+            if len(args) < 2:
+                self.console.print(Panel(
+                    "[warning]Please specify a server URL.[/]\n"
+                    "Example: [command]registry connect 192.168.1.5:5000[/]",
+                    title="Command Help",
+                    border_style="yellow"
+                ))
+                return
+
+            server_url = args[1]
+            self.console.print(f"[info]Connecting to registry server at {server_url}...[/]")
+            
+            if self.discovery.register_with_server(server_url):
+                self.console.print(f"[success]✓ Successfully registered with registry server[/]")
+                self.console.print("[info]Now discovering peers via both UDP broadcast and registry server[/]")
+            else:
+                self.console.print(f"[danger]Failed to connect to registry server at {server_url}[/]")
+                self.console.print("[info]Make sure the registry server is running and the URL is correct[/]")
+                self.console.print("[info]Continuing with UDP broadcast discovery only[/]")
+                
+        elif command == "disconnect":
+            if not self.discovery.is_using_registry():
+                self.console.print("[warning]Not currently connected to any registry server[/]")
+                return
+                
+            server_url = self.discovery.get_registry_server_url()
+            self.console.print(f"[info]Disconnecting from registry server at {server_url}...[/]")
+            
+            if self.discovery.unregister_from_server():
+                self.console.print(f"[success]✓ Successfully disconnected from registry server[/]")
+                self.console.print("[info]Now using UDP broadcast discovery only[/]")
+            else:
+                self.console.print(f"[danger]Error disconnecting from registry server[/]")
+                
+        elif command == "status":
+            if self.discovery.is_using_registry():
+                server_url = self.discovery.get_registry_server_url()
+                self.console.print(f"[success]✓ Currently registered with registry server:[/] [highlight]{server_url}[/]")
+            else:
+                self.console.print("[info]Not using registry server. Currently in UDP broadcast discovery mode.[/]")
+                
+        else:
+            self.console.print(Panel(
+                "[warning]Unknown registry command.[/]\n\n"
+                "Available commands:\n"
+                "  [command]registry[/] - Show current status\n"
+                "  [command]registry connect <server_url>[/] - Connect to a registry server\n"
+                "  [command]registry disconnect[/] - Disconnect from registry server\n"
+                "  [command]registry status[/] - Show current registry status",
+                title="Command Help",
+                border_style="yellow"
+            ))
+
     def show_help(self, *args):
         """Show help message"""
         help_table = Table(box=box.ROUNDED, show_header=True, header_style="bold cyan")
@@ -340,6 +420,8 @@ Or use [command]all <resource_id> on[/] to share with everyone."""
         help_table.add_row("all", "Share resource with everyone", "all resource_id on|off")
         help_table.add_row("sc", "Share clipboard with peers", "sc username1 username2")
         help_table.add_row("rc", "Receive clipboard from peers", "rc username1 username2")
+        help_table.add_row("registry", "Manage registry connection for restricted networks", 
+                           "registry connect 192.168.1.5:5000")
         help_table.add_row("debug", "Toggle debug mode", "debug")
         help_table.add_row("clear", "Clear screen", "clear")
         help_table.add_row("help", "Show this help message", "help")

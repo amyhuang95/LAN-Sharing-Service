@@ -5,8 +5,9 @@ import json
 import threading
 import time
 from datetime import datetime
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Union
 import uuid
+import requests
 
 from .discovery import PeerDiscovery
 from .types import Peer, Message
@@ -58,6 +59,11 @@ class UDPPeerDiscovery(PeerDiscovery):
         
         # Initialize file sharing manager
         self.file_share_manager = FileShareManager(username, self)
+        
+        # Initialize registry client for alternative peer discovery
+        from .registry_client import RegistryClient
+        self.registry_client = RegistryClient(self)
+        self.using_registry = False
 
     def start(self) -> None:
         """Start all services."""
@@ -116,7 +122,6 @@ class UDPPeerDiscovery(PeerDiscovery):
                 self.debug_print(f"Broadcasting presence: {self.username}")
             except Exception as e:
                 self.debug_print(f"Broadcast error: {e}")
-                # Add more detailed error info
                 self.debug_print(f"Error details: {str(e)}")
             time.sleep(self.config.broadcast_interval)
 
@@ -178,41 +183,61 @@ class UDPPeerDiscovery(PeerDiscovery):
             # Check if this is a new peer or an existing one
             is_new_peer = packet['username'] not in self.peers
             
-            self.peers[packet['username']] = Peer(
-                username=packet['username'],
-                address=addr[0],
-                last_seen=now,
-                first_seen=now if is_new_peer else 
-                          self.peers[packet['username']].first_seen # use current time for newly connected peer, keep the old value for already connected peer
-            )
-            self.debug_print(f"Updated peer: {packet['username']} at {addr[0]}")
-            
-            # If this is a new peer, announce all our shared resources to them
             if is_new_peer:
-                self.debug_print(f"New peer detected: {packet['username']} - announcing shared resources")
-                # Get all resources shared by this user
-                own_resources = [r for r in self.file_share_manager.shared_resources.values() 
-                               if r.owner == self.username and 
-                                 (r.shared_to_all or packet['username'] in r.allowed_users)]
-                
-                # Announce each resource that this peer can access
-                for resource in own_resources:
-                    # Use direct UDP message to the new peer instead of broadcast
-                    try:
-                        announce_packet = {
-                            'type': 'file_share',
-                            'action': 'announce',
-                            'data': resource.to_dict()
-                        }
-                        
-                        # Send directly to the new peer
-                        self.udp_socket.sendto(
-                            json.dumps(announce_packet).encode(),
-                            (addr[0], self.config.port)
-                        )
-                        self.debug_print(f"Announced resource {resource.id} to new peer {packet['username']}")
-                    except Exception as e:
-                        self.debug_print(f"Error announcing resource to new peer: {e}")
+                # Create a new peer
+                self.peers[packet['username']] = Peer(
+                    username=packet['username'],
+                    address=addr[0],
+                    last_seen=now,
+                    first_seen=now,
+                    broadcast_peer=True,  # Mark as broadcast discovered
+                    registry_peer=False    # Not registry discovered (initially)
+                )
+            else:
+                # Update existing peer
+                peer = self.peers[packet['username']]
+                peer.last_seen = now
+                peer.address = addr[0]
+                peer.broadcast_peer = True  # Mark as broadcast discovered
+                # Don't change registry_peer status - keep it if set
+            
+            self.debug_print(f"Updated peer via broadcast: {packet['username']} at {addr[0]}")
+            
+            # If this is a new peer, announce shared resources to them
+            if is_new_peer:
+                self.debug_print(f"New peer detected via broadcast: {packet['username']} - announcing shared resources")
+                self._announce_resources_to_new_peer(packet['username'], addr[0])
+
+    def _announce_resources_to_new_peer(self, username: str, address: str) -> None:
+        """Announce shared resources to a newly discovered peer.
+        
+        Args:
+            username: The username of the new peer
+            address: The IP address of the new peer
+        """
+        # Get all resources shared by this user that the new peer can access
+        own_resources = [r for r in self.file_share_manager.shared_resources.values() 
+                       if r.owner == self.username and 
+                         (r.shared_to_all or username in r.allowed_users)]
+        
+        # Announce each resource that this peer can access
+        for resource in own_resources:
+            # Create the announcement packet
+            announce_packet = {
+                'type': 'file_share',
+                'action': 'announce',
+                'data': resource.to_dict()
+            }
+            
+            try:
+                # Send directly to the new peer
+                self.udp_socket.sendto(
+                    json.dumps(announce_packet).encode(),
+                    (address, self.config.port)
+                )
+                self.debug_print(f"Announced resource {resource.id} to new peer {username}")
+            except Exception as e:
+                self.debug_print(f"Error announcing resource to new peer: {e}")
 
     def _handle_disconnection(self, packet: Dict) -> None:
         """
@@ -224,11 +249,22 @@ class UDPPeerDiscovery(PeerDiscovery):
         username = packet.get('username')
         if username and username != self.username and username in self.peers:
             self.debug_print(f"Peer disconnected: {username}")
-            # Remove from peers list
+            
+            # If the peer was discovered only via broadcast, remove it completely
+            # If it was also discovered via registry, just mark it as not broadcast-discovered
             if username in self.peers:
-                del self.peers[username]
-            # Clean up their shared resources
-            self._cleanup_disconnected_peer_resources(username)
+                peer = self.peers[username]
+                if peer.registry_peer:
+                    # If also registry-discovered, just mark as not broadcast-discovered
+                    peer.broadcast_peer = False
+                    self.debug_print(f"Peer {username} no longer available via broadcast, but still tracked via registry")
+                else:
+                    # If only broadcast-discovered, remove completely
+                    del self.peers[username]
+                    self.debug_print(f"Peer {username} completely removed (broadcast-only)")
+                    
+                    # Clean up their shared resources
+                    self._cleanup_disconnected_peer_resources(username)
 
     def _cleanup_disconnected_peer_resources(self, username: str) -> None:
         """
@@ -361,15 +397,38 @@ class UDPPeerDiscovery(PeerDiscovery):
         current_time = datetime.now()
         active_peers = {}
 
-        # Gets peers whose last seene time were within the timeout limit
-        for username, peer in self.peers.items():
-            time_diff = (current_time - peer.last_seen).total_seconds()
-            if time_diff <= self.config.peer_timeout:
+        # Process all peers
+        for username, peer in list(self.peers.items()):
+            keep_peer = False
+            
+            # If discovered via broadcast, check timeout
+            if peer.broadcast_peer:
+                time_diff = (current_time - peer.last_seen).total_seconds()
+                if time_diff <= self.config.peer_timeout:
+                    # Broadcast signal is still active
+                    keep_peer = True
+                else:
+                    # Broadcast signal timed out
+                    peer.broadcast_peer = False
+                    self.debug_print(f"Peer {username} broadcast signal timed out after {time_diff:.1f} seconds")
+                    
+                    # If also registry-discovered, keep it
+                    if peer.registry_peer:
+                        keep_peer = True
+                        self.debug_print(f"Keeping peer {username} as it's still tracked via registry")
+            
+            # If discovered via registry, keep it (registry client manages removal)
+            if peer.registry_peer:
+                keep_peer = True
+                
+            if keep_peer:
                 active_peers[username] = peer
             else:
-                self.debug_print(f"Removing {username} - not seen for {time_diff:.1f} seconds")
+                self.debug_print(f"Removing peer {username} - not available via any discovery method")
+                # Remove completely if no longer discovered via any method
+                if username in self.peers:
+                    del self.peers[username]
         
-        self.peers = active_peers
         return active_peers
 
     def list_messages(self, peer: Optional[str] = None) -> List[Message]:
@@ -398,6 +457,63 @@ class UDPPeerDiscovery(PeerDiscovery):
         return [msg for msg in self.messages 
                 if msg.conversation_id == conversation_id]
 
+    # Registry server methods for enhanced peer discovery
+
+    def register_with_server(self, server_url: str) -> bool:
+        """Register with a registry server for peer discovery in restricted networks.
+        
+        Args:
+            server_url: URL of the registry server (e.g., 'http://192.168.1.5:5000')
+            
+        Returns:
+            bool: True if registration was successful, False otherwise
+        """
+        success = self.registry_client.register(server_url)
+        self.using_registry = success
+        return success
+
+    def unregister_from_server(self) -> bool:
+        """Unregister from the registry server.
+        
+        Returns:
+            bool: True if unregistration was successful, False otherwise
+        """
+        success = self.registry_client.unregister()
+        self.using_registry = False
+        return success
+
+    def is_using_registry(self) -> bool:
+        """Check if the service is currently using a registry server.
+        
+        Returns:
+            bool: True if using registry, False if using only UDP broadcast
+        """
+        return self.using_registry
+
+    def get_registry_server_url(self) -> Optional[str]:
+        """Get the URL of the currently connected registry server.
+        
+        Returns:
+            Optional[str]: The URL or None if not connected to a registry
+        """
+        if self.registry_client.server_url and self.using_registry:
+            return self.registry_client.server_url
+        return None
+
     def cleanup(self) -> None:
-        """Clean up resources."""
-        self.stop()
+        """Clean up resources and unregister from registry if needed."""
+        if self.using_registry:
+            self.unregister_from_server()
+        
+        if self.running:
+            try:
+                # Announce disconnection before stopping
+                self.announce_disconnection()
+                # Give a moment for the message to be sent
+                time.sleep(0.5)  
+            except Exception as e:
+                self.debug_print(f"Error during disconnection: {e}")
+            
+            self.running = False
+            self.file_share_manager.stop()
+            self.udp_socket.close()
