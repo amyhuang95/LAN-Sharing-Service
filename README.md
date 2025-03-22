@@ -1,6 +1,15 @@
 # LAN Sharing Service
 A local-area-network (LAN) sharing service that shares files and clipboards across different devices in local area network with access level, essientially, it means transferring files directly between devices on the same network without going through the internet. 
 
+| Section |
+|---------|
+| [Introduction](#lan-sharing-service) |
+| [Critical User Journeys](#cuj) |
+| [Getting Started](#prerequisite) |
+| [Peer Discovery & Message Exchange Commands](#peer-discovery--message-exchange-commands) |
+| [File Sharing Commands](#file-sharing-commands) |
+| [Clipboad Sharing Commands](#clipboad-sharing-commands) |
+| [Registry Server Mode](#registry-server-mode) |
 
 ## CUJ
 - *CUJ#1:* sub LAN with access code;
