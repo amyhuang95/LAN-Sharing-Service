@@ -293,7 +293,7 @@ class RegistryClient:
         
         if is_new_peer:
             # Create the peer
-            from ..core.types import Peer
+            from .types import Peer
             self.discovery.peers[username] = Peer(
                 username=username,
                 address=address,

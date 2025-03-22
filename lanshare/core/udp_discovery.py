@@ -61,7 +61,7 @@ class UDPPeerDiscovery(PeerDiscovery):
         self.file_share_manager = FileShareManager(username, self)
         
         # Initialize registry client for alternative peer discovery
-        from .registry_client import RegistryClient
+        from .registry import RegistryClient
         self.registry_client = RegistryClient(self)
         self.using_registry = False
 
