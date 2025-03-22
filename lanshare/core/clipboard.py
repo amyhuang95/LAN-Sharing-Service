@@ -79,6 +79,10 @@ class Clipboard:
         self.remote_clip_thread.daemon = True
         self.remote_clip_thread.start()
 
+        self.refresh_peers_thread = threading.Thread(target=self._refresh_sharing_peers)
+        self.refresh_peers_thread.daemon = True
+        self.refresh_peers_thread.start()
+
     def debug_print(self, message: str) -> None:
         """Print debug message if enabled.
         
