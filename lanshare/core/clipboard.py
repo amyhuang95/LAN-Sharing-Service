@@ -130,15 +130,15 @@ class Clipboard:
         """Listen for copied content from other peers"""
         while self.running:
             try:
-                raw_packet, _ = self.udp_socket.recvfrom(4096)
+                raw_packet, addr = self.udp_socket.recvfrom(4096)
+                self.debug_print(f"Received raw clipboard data from {addr}")
                 packet = json.loads(raw_packet.decode())
                 if packet["type"] == "clip":
                     clip = Clip.from_dict(packet["data"])
-                    self.debug_print(f"New remote copy id: {clip.id}")
+                    self.debug_print(f"New remote copy id: {clip.id} from {clip.source}")
                     self._process_remote_clip(clip)
-
             except Exception as e:
-                self.debug_print(f"Packet receiving error: {e}")
+                self.debug_print(f"Clipboard packet receiving error: {e}")
 
     def _process_remote_clip(self, clip: Clip) -> None:
         """
@@ -151,12 +151,12 @@ class Clipboard:
             clip (Clip): The clipboard object containing the content and metadata from remote peer
         """
         if clip.source not in self.receive_from_peers:
-            self.debug_print(f"Sender not in accepted peers list")
+            self.debug_print(f"Sender {clip.source} not in accepted peers list. Accepted peers: {self.receive_from_peers}")
             return
         with self.clipboard_lock:
             self.curr_clip_content = clip.content # Update current clipboard content
             pyperclip.copy(clip.content)
-            self.debug_print("Copied received content to local clipboard")
+            self.debug_print(f"Copied content from {clip.source} to local clipboard")
             self.add_to_clip_history(clip)
 
     def send_clip(self, clip: Clip) -> None:
@@ -174,7 +174,7 @@ class Clipboard:
             # Get peers from discovery service
             peers = self.discovery.list_peers()
             if not peers or not self.send_to_peers:
-                self.debug_print("No active peers found to send clipboard content")
+                self.debug_print(f"No active peers found to send clipboard content. Send peers: {self.send_to_peers}")
                 return
             
             packet = {
@@ -182,27 +182,34 @@ class Clipboard:
                 'data': clip.to_dict()
             }
             
+            self.debug_print(f"Preparing to send clip id {clip.id} to peers: {self.send_to_peers}")
+            
             for username in self.send_to_peers:
                 if username in peers:
                     peer = peers[username]
                     
                     # Determine target port based on discovery method
-                    # For registry peers, use their registered port + 1
-                    # For broadcast peers, use the config clipboard port
                     if hasattr(peer, 'registry_peer') and peer.registry_peer:
-                        # For registry peers, base_port is explicitly stored
+                        # For registry peers, calculate clipboard port as base port + 1
                         base_port = getattr(peer, 'port', self.discovery.config.port)
                         clipboard_port = base_port + 1
-                        self.debug_print(f"Using registry port for clipboard: {base_port} + 1 = {clipboard_port}")
+                        self.debug_print(f"Registry peer {username}: using port {clipboard_port} (base:{base_port}+1)")
                     else:
-                        # For broadcast peers, use the clipboard port directly
+                        # For broadcast peers, use the config clipboard port
                         clipboard_port = self.config.clipboard_port
+                        self.debug_print(f"Broadcast peer {username}: using config clipboard port {clipboard_port}")
                     
-                    self.debug_print(f"Sending clip id {clip.id} to peer - {username} at {peer.address}:{clipboard_port}")
-                    self.udp_socket.sendto(
-                        json.dumps(packet).encode(), 
-                        (peer.address, clipboard_port)
-                    )
+                    try:
+                        self.debug_print(f"Sending clip id {clip.id} to peer {username} at {peer.address}:{clipboard_port}")
+                        self.udp_socket.sendto(
+                            json.dumps(packet).encode(), 
+                            (peer.address, clipboard_port)
+                        )
+                        self.debug_print(f"Successfully sent clip to {username}")
+                    except Exception as e:
+                        self.debug_print(f"Error sending clip to {username} at {peer.address}:{clipboard_port}: {e}")
+                else:
+                    self.debug_print(f"Peer {username} in send_to_peers but not in active peers list")
         except Exception as e:
             self.debug_print(f"Error sending clip id {clip.id}: {e}")
             
@@ -217,7 +224,9 @@ class Clipboard:
             peers (list[str]): A list of peer identifiers to send clipboard updates to.
                               Each identifier should uniquely identify a peer in the network.
         """
+        old_peers = self.send_to_peers
         self.send_to_peers = set(peers)
+        self.debug_print(f"Updated send_to_peers from {old_peers} to {self.send_to_peers}")
 
     def update_receive_from_peers(self, peers: list[str]) -> None:
         """
@@ -227,7 +236,9 @@ class Clipboard:
             peers (list[str]): List of peer IDs that are allowed to send clipboard 
                               content to this node. Duplicates will be automatically removed.
         """
+        old_peers = self.receive_from_peers
         self.receive_from_peers = set(peers)
+        self.debug_print(f"Updated receive_from_peers from {old_peers} to {self.receive_from_peers}")
 
     def add_to_clip_history(self, clip: Clip) -> None:
         """
