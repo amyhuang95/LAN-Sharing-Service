@@ -50,15 +50,8 @@ def register():
         is_new = peer_data['username'] not in peers
         peers[peer_data['username']] = peer_data
         
-        # Update stats
-        stats["registrations"] += 1
-        
-        # Log registration info to console
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        if is_new:
-            console.print(f"[bold green][{timestamp}] New peer registered:[/] [cyan]{peer_data['username']}[/] at [yellow]{peer_data['address']}:{peer_data['port']}[/]")
-        else:
-            console.print(f"[green][{timestamp}] Peer re-registered:[/] [cyan]{peer_data['username']}[/]")
+        # Log with port included
+        console.print(f"[bold green] Peer registered:[/] [cyan]{peer_data['username']}[/] at [yellow]{peer_data['address']}:{peer_data['port']}[/]")
         
         return jsonify({"status": "registered"})
     except Exception as e:

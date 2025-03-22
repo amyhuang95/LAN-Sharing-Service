@@ -237,13 +237,14 @@ class RegistryClient:
                                 
                             # Get address and port
                             address = peer.get("address")
+                            port = peer.get("port", self.discovery.config.port)  # Get port, default to config
                             
                             # Add to seen peers set
                             self.seen_registry_peers.add(username)
                             self.known_registry_peers.add(username)
                             
                             # Process this registry peer
-                            self._process_registry_peer(username, address, now)
+                            self._process_registry_peer(username, address, port, now)
                             
                         # Check for registry peers that have disappeared
                         self._check_disappeared_peers()
@@ -278,12 +279,13 @@ class RegistryClient:
         self.refresh_thread.daemon = True
         self.refresh_thread.start()
         
-    def _process_registry_peer(self, username: str, address: str, now: datetime) -> None:
+    def _process_registry_peer(self, username: str, address: str, port: int, now: datetime) -> None:
         """Process a peer discovered through the registry.
         
         Args:
             username: Peer's username
             address: Peer's IP address
+            port: Peer's port number
             now: Current timestamp
         """
         # Check if this is a completely new peer
@@ -295,21 +297,27 @@ class RegistryClient:
             self.discovery.peers[username] = Peer(
                 username=username,
                 address=address,
+                port=port,  # Store the port explicitly
                 last_seen=now,
                 first_seen=now,
                 registry_peer=True,  # Mark as registry-discovered
                 broadcast_peer=False  # Initially not broadcast-discovered
             )
-            self.discovery.debug_print(f"New peer found via registry: {username}")
+            self.discovery.debug_print(f"New peer found via registry: {username} at {address}:{port}")
             # Announce resources to new peer
-            self.discovery._announce_resources_to_new_peer(username, address)
+            self.discovery._announce_resources_to_new_peer(username, address, port)
         else:
             # Update existing peer
             peer = self.discovery.peers[username]
             peer.last_seen = now
             peer.address = address
+            peer.port = port  # Update port
             peer.registry_peer = True  # Mark as registry-discovered
             # Don't change the broadcast_peer flag - keep it if set
+            
+            # If this peer is dual-discovered, log it
+            if peer.broadcast_peer:
+                self.discovery.debug_print(f"Peer {username} is dual-discovered (registry + broadcast)")
     
     def _check_disappeared_peers(self) -> None:
         """Check for peers that have disappeared from the registry."""

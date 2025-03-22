@@ -179,7 +179,7 @@ class UDPPeerDiscovery(PeerDiscovery):
         """
         if packet['username'] != self.username:
             now = datetime.now()
-            
+            ip_address, port = addr
             # Check if this is a new peer or an existing one
             is_new_peer = packet['username'] not in self.peers
             
@@ -187,18 +187,20 @@ class UDPPeerDiscovery(PeerDiscovery):
                 # Create a new peer
                 self.peers[packet['username']] = Peer(
                     username=packet['username'],
-                    address=addr[0],
+                    address=ip_address,
+                    port=self.config.port,  # Use config port for broadcast peers
                     last_seen=now,
                     first_seen=now,
-                    broadcast_peer=True,  # Mark as broadcast discovered
-                    registry_peer=False    # Not registry discovered (initially)
+                    broadcast_peer=True,
+                    registry_peer=False
                 )
             else:
                 # Update existing peer
                 peer = self.peers[packet['username']]
                 peer.last_seen = now
-                peer.address = addr[0]
-                peer.broadcast_peer = True  # Mark as broadcast discovered
+                peer.address = ip_address
+                peer.port = self.config.port  # Update port
+                peer.broadcast_peer = True
                 # Don't change registry_peer status - keep it if set
             
             self.debug_print(f"Updated peer via broadcast: {packet['username']} at {addr[0]}")
@@ -215,14 +217,20 @@ class UDPPeerDiscovery(PeerDiscovery):
             username: The username of the new peer
             address: The IP address of the new peer
         """
-        # Get all resources shared by this user that the new peer can access
-        own_resources = [r for r in self.file_share_manager.shared_resources.values() 
-                       if r.owner == self.username and 
-                         (r.shared_to_all or username in r.allowed_users)]
+        peer = self.peers.get(username)
+        if not peer:
+            return
+            
+        # Get peer's port (fallback to config port if not available)
+        target_port = getattr(peer, 'port', self.config.port)
         
-        # Announce each resource that this peer can access
+        # Get resources the peer can access
+        own_resources = [r for r in self.file_share_manager.shared_resources.values() 
+                    if r.owner == self.username and 
+                        (r.shared_to_all or username in r.allowed_users)]
+        
+        # Announce each resource
         for resource in own_resources:
-            # Create the announcement packet
             announce_packet = {
                 'type': 'file_share',
                 'action': 'announce',
@@ -230,14 +238,14 @@ class UDPPeerDiscovery(PeerDiscovery):
             }
             
             try:
-                # Send directly to the new peer
+                # Send with correct port
                 self.udp_socket.sendto(
                     json.dumps(announce_packet).encode(),
-                    (address, self.config.port)
+                    (peer.address, target_port)
                 )
-                self.debug_print(f"Announced resource {resource.id} to new peer {username}")
+                self.debug_print(f"Announced resource {resource.id} to peer {username} at {peer.address}:{target_port}")
             except Exception as e:
-                self.debug_print(f"Error announcing resource to new peer: {e}")
+                self.debug_print(f"Error announcing resource to peer: {e}")
 
     def _handle_disconnection(self, packet: Dict) -> None:
         """
@@ -369,19 +377,24 @@ class UDPPeerDiscovery(PeerDiscovery):
                 conversation_id=conv_id,
                 reply_to=reply_to
             )
+            
+            
 
             packet = {
                 'type': 'message',
                 'data': message.to_dict()
             }
-
+            
+            # Use the peer's stored port
+            target_port = getattr(peer, 'port', self.config.port)   
+                
             self.udp_socket.sendto(
                 json.dumps(packet).encode(),
-                (peer.address, self.config.port)
+                (peer.address, target_port)
             )
             
             self.messages.append(message)
-            self.debug_print(f"Sent message to {recipient} at {peer.address}: {title}")
+            self.debug_print(f"Sent message to {recipient} at {peer.address}:{target_port}: {title}")
             return message
 
         except Exception as e:

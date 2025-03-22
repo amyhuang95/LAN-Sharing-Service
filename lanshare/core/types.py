@@ -18,6 +18,7 @@ class Peer:
 
     username: str
     address: str
+    port: int
     last_seen: datetime
     first_seen: datetime
     registry_peer: bool = False  # Discovered via registry
