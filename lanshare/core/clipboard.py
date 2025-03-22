@@ -186,11 +186,17 @@ class Clipboard:
                 if username in peers:
                     peer = peers[username]
                     
-                    # Get the peer's base port
-                    base_port = getattr(peer, 'port', self.discovery.config.port)
-                    
-                    # Calculate clipboard port (base port + 1)
-                    clipboard_port = base_port + 1
+                    # Determine target port based on discovery method
+                    # For registry peers, use their registered port + 1
+                    # For broadcast peers, use the config clipboard port
+                    if hasattr(peer, 'registry_peer') and peer.registry_peer:
+                        # For registry peers, base_port is explicitly stored
+                        base_port = getattr(peer, 'port', self.discovery.config.port)
+                        clipboard_port = base_port + 1
+                        self.debug_print(f"Using registry port for clipboard: {base_port} + 1 = {clipboard_port}")
+                    else:
+                        # For broadcast peers, use the clipboard port directly
+                        clipboard_port = self.config.clipboard_port
                     
                     self.debug_print(f"Sending clip id {clip.id} to peer - {username} at {peer.address}:{clipboard_port}")
                     self.udp_socket.sendto(

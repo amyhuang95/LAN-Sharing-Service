@@ -220,10 +220,22 @@ class UDPPeerDiscovery(PeerDiscovery):
         """
         peer = self.peers.get(username)
         if not peer:
+            self.debug_print(f"Cannot announce resources to unknown peer {username}")
             return
             
-        # Get peer's port (use provided port, or peer's port attribute, or fallback to config port)
-        target_port = port if port is not None else getattr(peer, 'port', self.config.port)
+        # Determine the correct base port for the target peer
+        # Check if explicitly provided port should be used
+        if port is not None:
+            target_port = port
+            self.debug_print(f"Using explicitly provided port for announcements: {target_port}")
+        # Check if this is a registry-discovered peer (which stores its port)
+        elif hasattr(peer, 'registry_peer') and peer.registry_peer:
+            target_port = peer.port
+            self.debug_print(f"Using registry-provided port for announcements: {target_port}")
+        # Fall back to config port for broadcast peers
+        else:
+            target_port = self.config.port
+            self.debug_print(f"Using default config port for announcements: {target_port}")
         
         # Get resources the peer can access
         own_resources = [r for r in self.file_share_manager.shared_resources.values() 

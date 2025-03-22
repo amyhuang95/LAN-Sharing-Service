@@ -616,8 +616,23 @@ class FileShareManager:
             port: Optional specific port to use for FTP connection.
         """
         try:
-            # Determine the FTP port to use
-            ftp_port = port if port is not None else self.ftp_address[1]
+            # Get owner's peer information
+            owner_peer = self.discovery.peers.get(resource.owner)
+            
+            # Determine the FTP port to use with improved logic
+            if port is not None:
+                # If port is explicitly provided, use it
+                ftp_port = port
+                self.debug_log(f"Using explicitly provided port: {ftp_port}")
+            elif owner_peer is not None:
+                # If we have peer information, use their base port + 1 for FTP
+                base_port = getattr(owner_peer, 'port', self.discovery.config.port)
+                ftp_port = base_port + 1
+                self.debug_log(f"Using peer's base port + 1 for FTP: {base_port} + 1 = {ftp_port}")
+            else:
+                # Fallback to default FTP port
+                ftp_port = self.ftp_address[1]
+                self.debug_log(f"Using default FTP port: {ftp_port}")
             
             self.debug_log(f"Downloading {os.path.basename(resource.path)} from {host_ip} using port {ftp_port}...")
             
@@ -667,7 +682,6 @@ class FileShareManager:
                 self.debug_log(f"All FTP login attempts failed - cannot download resource")
                 return
             
-            # Rest of the method remains the same...
             # Explicitly set binary mode for file transfers
             ftp.sendcmd('TYPE I')
             
