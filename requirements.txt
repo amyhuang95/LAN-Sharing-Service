@@ -3,3 +3,4 @@ typing-extensions>=4.0.0  # For type hints in Python 3.7+
 pyftpdlib>=2.0.1 # For FTP file sharing
 pyperclip # For clipboard management (Windows/MacOS/Linux) 
 rich>=10.0.0  # For enhanced terminal UI
+streamlit # For web UI
