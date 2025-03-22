@@ -38,6 +38,7 @@ class UserListView:
             'registry-peer': '#00ffff',   # Cyan for registry peers
             'dual-peer': '#ff00ff',       # Magenta for dual-discovered peers
             'peer-address': '#bbbbbb',    # Light gray for IP addresses
+            'peer-port': '#aaaaff',       # Light blue for port numbers
         })
 
     def _get_user_list_text(self):
@@ -60,6 +61,12 @@ class UserListView:
             elif registry:
                 registry_only_peers[username] = peer
         
+        # Column widths - consistent across all tables
+        username_width = 25
+        ip_width = 20
+        port_width = 10
+        total_width = username_width + ip_width + port_width + 3  # +3 for spacing
+        
         # Generate text for the view
         text = []
         
@@ -76,33 +83,39 @@ class UserListView:
                 ("class:dual-title", "  Peers Discovered by Both Methods "),
                 ("", "\n"),
                 ("", "  "),
-                ("class:border", "╭" + "─" * 50 + "╮"),
+                ("class:border", "╭" + "─" * total_width + "╮"),
                 ("", "\n"),
                 ("", "  "),
-                ("class:border", "│"),
-                ("", f" {'Username':<20} {'IP Address':<28}"),
-                ("class:border", "│"),
+                ("class:border", " "),
+                ("", " "),
+                ("", f"{'Username':<{username_width}}"),
+                ("", f"{'IP Address':<{ip_width}}"),
+                ("", f"{'Port':<{port_width}}"),
+                ("class:border", " "),
                 ("", "\n"),
                 ("", "  "),
-                ("class:border", "├" + "─" * 50 + "┤"),
+                ("class:border", "├" + "─" * total_width + "┤"),
                 ("", "\n")
             ])
             
             # User entries
             for username, peer in dual_peers.items():
+                port = getattr(peer, 'port', self.discovery.config.port)
                 text.extend([
                     ("", "  "),
-                    ("class:border", "│"),
-                    ("class:dual-peer", f" {username:<20} "),
-                    ("class:peer-address", f"{peer.address:<28}"),
-                    ("class:border", "│"),
+                    ("class:border", " "),
+                    ("", " "),
+                    ("class:dual-peer", f"{username:<{username_width}}"),
+                    ("class:peer-address", f"{peer.address:<{ip_width}}"),
+                    ("class:peer-port", f"{port:<{port_width}}"),
+                    ("class:border", " "),
                     ("", "\n")
                 ])
             
             # Footer for dual section
             text.extend([
                 ("", "  "),
-                ("class:border", "╰" + "─" * 50 + "╯"),
+                ("class:border", "╰" + "─" * total_width + "╯"),
                 ("", "\n\n")
             ])
         
@@ -111,47 +124,52 @@ class UserListView:
             ("class:broadcast-title", "  Broadcast Discovered Peers "),
             ("", "\n"),
             ("", "  "),
-            ("class:border", "╭" + "─" * 50 + "╮"),
+            ("class:border", "╭" + "─" * total_width + "╮"),
             ("", "\n")
         ])
         
         if not broadcast_only_peers:
             text.extend([
                 ("", "  "),
-                ("class:border", "│"),
-                ("fg:gray", " No broadcast-only peers online"),
-                ("", " " * (49 - len("No broadcast-only peers online"))),
-                ("class:border", "│"),
+                ("class:border", " "),
+                ("fg:gray", f" No broadcast-only peers online{' ' * (total_width - 29)}"),
+                ("class:border", " "),
                 ("", "\n")
             ])
         else:
             # Header
             text.extend([
                 ("", "  "),
-                ("class:border", "│"),
-                ("", f" {'Username':<20} {'IP Address':<28}"),
-                ("class:border", "│"),
+                ("class:border", " "),
+                ("", " "),
+                ("", f"{'Username':<{username_width}}"),
+                ("", f"{'IP Address':<{ip_width}}"),
+                ("", f"{'Port':<{port_width}}"),
+                ("class:border", "  "),
                 ("", "\n"),
                 ("", "  "),
-                ("class:border", "├" + "─" * 50 + "┤"),
+                ("class:border", "├" + "─" * total_width + "┤"),
                 ("", "\n")
             ])
             
             # User entries
             for username, peer in broadcast_only_peers.items():
+                port = getattr(peer, 'port', self.discovery.config.port)
                 text.extend([
                     ("", "  "),
-                    ("class:border", "│"),
-                    ("class:broadcast-peer", f" {username:<20} "),
-                    ("class:peer-address", f"{peer.address:<28}"),
-                    ("class:border", "│"),
+                    ("class:border", " "),
+                    ("", " "),
+                    ("class:broadcast-peer", f"{username:<{username_width}}"),
+                    ("class:peer-address", f"{peer.address:<{ip_width}}"),
+                    ("class:peer-port", f"{port:<{port_width}}"),
+                    ("class:border", " "),
                     ("", "\n")
                 ])
         
         # Footer for broadcast section
         text.extend([
             ("", "  "),
-            ("class:border", "╰" + "─" * 50 + "╯"),
+            ("class:border", "╰" + "─" * total_width + "╯"),
             ("", "\n\n")
         ])
         
@@ -160,47 +178,52 @@ class UserListView:
             ("class:registry-title", "  Registry Discovered Peers "),
             ("", "\n"),
             ("", "  "),
-            ("class:border", "╭" + "─" * 50 + "╮"),
+            ("class:border", "╭" + "─" * total_width + "╮"),
             ("", "\n")
         ])
         
         if not registry_only_peers:
             text.extend([
                 ("", "  "),
-                ("class:border", "│"),
-                ("fg:gray", " No registry-only peers online"),
-                ("", " " * (49 - len("No registry-only peers online"))),
-                ("class:border", "│"),
+                ("class:border", " "),
+                ("fg:gray", f" No registry-only peers online{' ' * (total_width - 28)}"),
+                ("class:border", " "),
                 ("", "\n")
             ])
         else:
             # Header
             text.extend([
                 ("", "  "),
-                ("class:border", "│"),
-                ("", f" {'Username':<20} {'IP Address':<28}"),
-                ("class:border", "│"),
+                ("class:border", " "),
+                ("", " "),
+                ("", f"{'Username':<{username_width}}"),
+                ("", f"{'IP Address':<{ip_width}}"),
+                ("", f"{'Port':<{port_width}}"),
+                ("class:border", " "),
                 ("", "\n"),
                 ("", "  "),
-                ("class:border", "├" + "─" * 50 + "┤"),
+                ("class:border", "├" + "─" * total_width + "┤"),
                 ("", "\n")
             ])
             
             # User entries
             for username, peer in registry_only_peers.items():
+                port = getattr(peer, 'port', self.discovery.config.port)
                 text.extend([
                     ("", "  "),
-                    ("class:border", "│"),
-                    ("class:registry-peer", f" {username:<20} "),
-                    ("class:peer-address", f"{peer.address:<28}"),
-                    ("class:border", "│"),
+                    ("class:border", " "),
+                    ("", " "),
+                    ("class:registry-peer", f"{username:<{username_width}}"),
+                    ("class:peer-address", f"{peer.address:<{ip_width}}"),
+                    ("class:peer-port", f"{port:<{port_width}}"),
+                    ("class:border", " "),
                     ("", "\n")
                 ])
         
         # Footer for registry section
         text.extend([
             ("", "  "),
-            ("class:border", "╰" + "─" * 50 + "╯"),
+            ("class:border", "╰" + "─" * total_width + "╯"),
             ("", "\n\n")
         ])
         
@@ -213,6 +236,14 @@ class UserListView:
         else:
             text.extend([
                 ("fg:yellow", f"  Not connected to a registry server (using broadcast only)\n")
+            ])
+        
+        # Add clipboard service status
+        if hasattr(self.discovery, 'clipboard') and self.discovery.clipboard:
+            clipboard_status = "ACTIVE" if self.discovery.clipboard.running else "INACTIVE"
+            clipboard_color = "fg:green" if self.discovery.clipboard.running else "fg:red"
+            text.extend([
+                (clipboard_color, f"  Clipboard sharing service: {clipboard_status}\n")
             ])
         
         # Summary count
