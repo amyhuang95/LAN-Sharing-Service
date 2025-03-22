@@ -416,7 +416,7 @@ class FileShareManager:
             self.discovery.debug_print(f"Error in recursive copy: {e}")
     
     def _announce_resource(self, resource: SharedResource) -> None:
-        """Announce a shared resource to all peers.
+        """Announce a shared resource to peers.
         Args:
             resource: The resource to announce.
         """
@@ -427,33 +427,38 @@ class FileShareManager:
                 'data': resource.to_dict()
             }
             
-            # First do the traditional broadcast for broadcast-discovered peers
-            self.discovery.udp_socket.sendto(
-                json.dumps(packet).encode(),
-                ('<broadcast>', self.config.port)
-            )
+            # Send via broadcast (for broadcast-discovered peers)
+            try:
+                self.discovery.udp_socket.sendto(
+                    json.dumps(packet).encode(),
+                    ('<broadcast>', self.config.port)
+                )
+                self.discovery.debug_print(f"Broadcast resource announcement for {resource.id}")
+            except Exception as e:
+                self.discovery.debug_print(f"Error broadcasting resource announcement: {e}")
             
-            # Then send directly to all registry-discovered peers
+            # Also send directly to all registry-discovered peers
+            # This ensures registry peers get the announcement even in networks where broadcast is blocked
             peers = self.discovery.list_peers()
             for username, peer in peers.items():
-                # Skip peers we only know through broadcast (they'll get the broadcast packet)
-                if not peer.registry_peer:
+                # Only send direct announcements to registry-discovered peers
+                if not hasattr(peer, 'registry_peer') or not peer.registry_peer:
                     continue
                     
-                # Send directly to registry-discovered peer using their stored port
-                target_port = peer.port
-                self.discovery.debug_print(f"Sending direct resource announcement to registry peer {username} at {peer.address}:{target_port}")
+                # Get their specific port
+                target_port = getattr(peer, 'port', self.discovery.config.port)
                 
                 try:
                     self.discovery.udp_socket.sendto(
                         json.dumps(packet).encode(),
                         (peer.address, target_port)
                     )
+                    self.discovery.debug_print(f"Sent direct resource announcement to registry peer {username} at {peer.address}:{target_port}")
                 except Exception as e:
-                    self.discovery.debug_print(f"Error sending direct resource announcement to {username}: {e}")
+                    self.discovery.debug_print(f"Error sending direct announcement to {username}: {e}")
                     
         except Exception as e:
-            self.discovery.debug_print(f"Error announcing resource: {e}")
+            self.discovery.debug_print(f"Error in resource announcement: {e}")
             
     def update_resource_access(self, resource_id: str, username: str, add: bool = True) -> bool:
         """Update access permissions for a shared resource.

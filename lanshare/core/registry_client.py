@@ -327,6 +327,11 @@ class RegistryClient:
                 if username in self.discovery.peers:
                     peer = self.discovery.peers[username]
                     
+                    # Before removing the peer, trigger resource cleanup
+                    if not peer.broadcast_peer:  # Only for peers that are registry-only
+                        self.discovery.debug_print(f"Registry peer {username} disappeared - cleaning up their resources")
+                        self.discovery._cleanup_disconnected_peer_resources(username)
+                    
                     if peer.broadcast_peer:
                         # If also discovered via broadcast, just mark as not registry-discovered
                         peer.registry_peer = False
@@ -335,6 +340,6 @@ class RegistryClient:
                         # If only discovered via registry, remove completely
                         del self.discovery.peers[username]
                         self.discovery.debug_print(f"Removed peer {username} - no longer available via registry")
-                
+                    
                 # Remove from known registry peers
                 self.known_registry_peers.remove(username)
