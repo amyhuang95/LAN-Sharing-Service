@@ -21,8 +21,6 @@ class Clipboard:
         Args:
             discovery (UDPPeerDiscovery): Discovery service to identify active peers on the network.
             config (Config): Configuration settings for the clipboard service.
-            activate (bool): Whether to immediately activate the clipboard service upon initialization.
-                If True, the service starts running; if False, it needs to be manually started later.
 
         Attributes:
             curr_clip_content (str): The current clipboard content, initialized with the last copied content.
@@ -237,6 +235,7 @@ class Clipboard:
         active_peers = self.discovery.list_peers()
         if peer in active_peers:
             self.send_to_peers.add(peer)
+            self.debug_print(f"Added {peer} to send list. Current send list: {self.send_to_peers}")
     
     def remove_sending_peer(self, peer:str) -> None:
         """
@@ -245,7 +244,11 @@ class Clipboard:
         Args:
             peer (str): username of the peer
         """
-        self.send_to_peers.remove(peer)
+        if peer in self.send_to_peers:
+            self.send_to_peers.remove(peer)
+            self.debug_print(f"Removed {peer} from send list. Current send list: {self.send_to_peers}")
+        else:
+            self.debug_print(f"Peer {peer} not found in send list: {self.send_to_peers}")
 
     def add_receiving_peer(self, peer: str) -> None:
         """
@@ -254,11 +257,10 @@ class Clipboard:
         Args:
             peer (str): username of the peer
         """
-        old_peers = self.send_to_peers
         active_peers = self.discovery.list_peers()
         if peer in active_peers:
             self.receive_from_peers.add(peer)
-        self.debug_print(f"Updated send_to_peers from {old_peers} to {self.send_to_peers}")
+            self.debug_print(f"Added {peer} to receive list. Current receive list: {self.receive_from_peers}")
     
     def remove_receiving_peer(self, peer: str) -> None:
         """
@@ -267,9 +269,11 @@ class Clipboard:
         Args:
             peer (str): username of the peer
         """
-        old_peers = self.receive_from_peers
-        self.receive_from_peers.remove(peer)
-        self.debug_print(f"Updated receive_from_peers from {old_peers} to {self.receive_from_peers}")
+        if peer in self.receive_from_peers:
+            self.receive_from_peers.remove(peer)
+            self.debug_print(f"Removed {peer} from receive list. Current receive list: {self.receive_from_peers}")
+        else:
+            self.debug_print(f"Peer {peer} not found in receive list: {self.receive_from_peers}")
 
     def add_to_clip_history(self, clip: Clip) -> None:
         """
@@ -281,7 +285,6 @@ class Clipboard:
         Args:
             clip (Clip): The clip object to be added to the history.
         """
-
         self.clip_list.append(clip)
         if len(self.clip_list) > self.max_clips:
             self.clip_list.pop(0)
