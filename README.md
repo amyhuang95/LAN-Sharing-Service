@@ -1,30 +1,6 @@
 # LAN Sharing Service
 A local-area-network (LAN) sharing service that shares files and clipboards across different devices in local area network, essientially, it means transferring files directly between devices on the same network without going through the internet. 
 
-## Table of Contents
-- [Overview](#lan-sharing-service)
-- [Critical User Journeys (CUJ)](#cuj)
-- [Prerequisites](#prerequisite)
-- [Getting Started](#start)
-- [Usage Notes](#note)
-- [Demonstrations](#demo)
-  - [Video Demos iter 1](#video-iter1)
-  - [Video Demos iter 2](#video-iter1)
-- [File Sharing Features](#iter2-file-sharing-commands)
-  - [Sharing Files](#share-share-path-to-a-filedirectory)
-  - [Viewing Shared Files](#show-all-shared-files-files)
-  - [Managing Access](#regular-access-command-access-resource_id-user_id-addrm)
-- [Clipboard Sharing](#iter1-basic-commands---peer-discovery--message)
-  - [sc/rc](#user-list-ul)
-- [Peer Discovery & Msg Exchange](#iter1-basic-commands---peer-discovery--message)
-  - [msg](#user-list-ul)
-  - [lm/om](#debug-view-debug)
-- [GUI](#iter1-basic-commands---peer-discovery--message)
-  - [gui=terminal](#user-list-ul)
-- [Registry Server/Client](#iter1-basic-commands---peer-discovery--message)
-- [Auto-Complete](#iter1-basic-commands---peer-discovery--message)
-
-
 
 ## CUJ
 - *CUJ#1:* sub LAN with access code;
@@ -32,8 +8,6 @@ A local-area-network (LAN) sharing service that shares files and clipboards acro
 - *CUJ#3:* access level (secured mode, admin, visitor, ...);
 - *CUJ#4:* messages transmission & history (text only);
 - *CUJ#5:* file transmission (different format);
-- *CUJ#6:* streaming across LAN;
-- *CUJ#7:* backup and restore;
 
 ## Prerequisite
 First, make a new folder and clone the repo:
@@ -53,62 +27,70 @@ pip install -r requirements.txt
 ## Start
 Create a user with `username = evan-dayy`. Add `--share_clipboard` or `-sc` flag to activate clipboard sharing feature.
 ```sh
-python create.py create --username <USERNAME> [-sc]
+python create.py create --username <USERNAME> --port <OPTIONL>
 ```
 Type `help` to see the LAN Terminal command;
 ```
-
-Welcome to LAN Share, evan-dayy#81b6!
-Type 'help' for available commands
-evan-dayy#81b6@LAN(192.168.4.141)# help
-
-Available commands:
-  ul     - List online users
-  msg    - Send a message (msg <username>)
-  lm     - List all messages
-  om     - Open a message conversation (om <conversation_id>)
-  share  - Share a file or directory (share <path>)
-  files  - List shared files
-  access - Manage access to shared resources (access <id> <user> [add|rm])
-  all    - Share resource with everyone (all <id> [on|off])
-  sc     - Share clipboard (sc <username_1> <username_2> ...)
-  rc     - Receive clipboard from peers (rc <username_1> <username_2> ...)
-  debug  - Toggle debug mode
-  clear  - Clear screen
-  help   - Show this help message
-  exit   - Exit the session
-evan-dayy#81b6@LAN(192.168.4.141)#
+╔═════════════════════════════ LAN Share Service ══════════════════════════════╗
+║ Welcome to LAN Share, evan-dayy#b598!                                        ║
+║                                                                              ║
+║ • Share files and directories on your local network                          ║
+║ • Chat with other users on the same network                                  ║
+║ • Share clipboard contents securely                                          ║
+║                                                                              ║
+║ Type help for available commands                                             ║
+║ Press Tab to autocomplete commands, usernames, and file paths                ║
+╚════════════════════════ Connected as evan-dayy#b598 ═════════════════════════╝
+evan-dayy#b598@LAN(192.168.4.141)# help
+╭──────────────────────── LAN Share Command Reference ─────────────────────────╮
+│ ╭───────────┬──────────────────────────────┬───────────────────────────────╮ │
+│ │ Command   │ Description                  │ Usage Example                 │ │
+│ ├───────────┼──────────────────────────────┼───────────────────────────────┤ │
+│ │ ul        │ List online users            │ ul                            │ │
+│ │ msg       │ Send a message to a user     │ msg username                  │ │
+│ │ lm        │ List all message             │ lm                            │ │
+│ │           │ conversations                │                               │ │
+│ │ om        │ Open a specific conversation │ om conv_id                    │ │
+│ │ share     │ Share a file or directory    │ share ~/Documents/file.txt    │ │
+│ │ files     │ List and manage shared files │ files                         │ │
+│ │ access    │ Manage access to shared      │ access resource_id username   │ │
+│ │           │ resources                    │ add|rm                        │ │
+│ │ all       │ Share resource with everyone │ all resource_id on|off        │ │
+│ │ clipboard │ Activate/deactivate          │ clipboard on|off              │ │
+│ │           │ clipboard sharing            │                               │ │
+│ │ sc        │ Add peers to share clips to  │ sc to|from username add|rm    │ │
+│ │           │ or receive clips from        │                               │ │
+│ │ registry  │ Manage registry connection   │ registry connect              │ │
+│ │           │ for restricted networks      │ 192.168.1.5:5000              │ │
+│ │ debug     │ Toggle debug mode            │ debug                         │ │
+│ │ clear     │ Clear screen                 │ clear                         │ │
+│ │ help      │ Show this help message       │ help                          │ │
+│ │ exit/quit │ Exit the application         │ exit                          │ │
+│ ╰───────────┴──────────────────────────────┴───────────────────────────────╯ │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│ TIP: Press Tab to autocomplete commands, usernames, and file paths.          │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
 
 ```
+## Peer Discovery & Message Exchange Commands
 
-#### Note
-* To enable two way exchange of clipboard content, peers needs to add each other to their sending and receiving lists with `sc` and `rc` commands. For example, if Peer1 and Peer2 want to exchange clipboard data:
+### List all online users
+```
+evan-dayy#07a8@LAN(192.168.4.141)# ul
+```
 
-  Peer1 needs to run:
-  ```
-  sc Peer2
-  rc Peer2
-  ```
-
-  Peer2 needs to run:
-  ```
-  sc Peer1
-  rc Peer1
-  ```
-  With this setup, when Peer1 copies some text, Peer2 will be able to paste right away. Same for the opposite direction. 
-
-## Demo
-### Video (iter1) 
-
-https://github.com/user-attachments/assets/549d37ee-d8e8-4d7f-b6bb-4cc80f819626
-
-### Video (iter2) 
+### Real-time Message Exchange with a Peer
+```
+evan-dayy#07a8@LAN(192.168.4.141)# msg jennifer#6423432  --send a message
+evan-dayy#07a8@LAN(192.168.4.141)# lm                    --list all message
+evan-dayy#07a8@LAN(192.168.4.141)# om <message id>       --open a message
+```
 
 
-https://github.com/user-attachments/assets/3b515191-a86d-436f-904b-736dbc586298
-
-
-## Iter2 File Sharing Commands
+## File Sharing Commands
 
 These commands show all the basic usages on how to share a file or directory with a peer, however, there are some important features doesn't show here, here are the summary we provide on file sharing features:
 - Share a file or directory to everyone;
@@ -120,8 +102,15 @@ These commands show all the basic usages on how to share a file or directory wit
 
 ### Share `share <path to a [file|directory]>`
 ```
-evan-dayy#07a8@LAN(192.168.4.141)# share ~/Desktop/samwise
-evan-dayy#07a8@LAN(192.168.4.141)# share ./create.py
+evan-dayy#208b@LAN(192.168.4.141)# share ./create.py
+╭───────────────────────────────────── ✓ Share Successful ──────────────────────────────────────╮
+│ Successfully shared file: ./create.py                                                         │
+│ Resource ID: evan-dayy#208b_1742673990_create.py                                              │
+│                                                                                               │
+│ By default, only you can access this resource.                                                │
+│ Use access <resource_id> <username> add to give access to others.                             │
+│ Or use all <resource_id> on to share with everyone.                                           │
+╰───────────────────────────────────────────────────────────────────────────────────────────────╯
 ```
 - You can share any file (including video or images) or directory (including recusive directory) by using this command;
 - The path can be any format - including relative path or absolute path;
@@ -131,7 +120,7 @@ lanshare
     |____shared
             |____evan-dayy#07a8
             |____jennifer#24fs
-            |____(other peers shared files)
+            |____(other peers folder that contained shared files)
 ```
 
 ### Show all shared files `files`
@@ -144,11 +133,74 @@ evan-dayy#07a8@LAN(192.168.4.141)# files
 ![Local Image](assets/files2.png)
 
 
-### Regular Access Command `access <resource_id> <user_id> [add|rm]` 
+### Access Command `access <resource_id> <user_id> [add|rm]` 
 ```
-evan-dayy#07a8@LAN(192.168.4.141)# access samwise_id jennifer#24s7 add
-Successfully added to access list for jennifer#24s7
-evan-dayy#07a8@LAN(192.168.4.141)# access samwsize_id jennifer#24s7 rm
-Successfully removed from access list for jennifer#24s7
+evan-dayy#208b@LAN(192.168.4.141)# access
+╭──────────────────────────────────────── Command Help ─────────────────────────────────────────╮
+│ Usage: access <resource_id> <username> add|rm                                                 │
+╰───────────────────────────────────────────────────────────────────────────────────────────────╯
+evan-dayy#208b@LAN(192.168.4.141)# access evan-dayy#208b_1742673990_create.py jennifer#b903 add
+✓ Successfully added to access list for jennifer#b903
+evan-dayy#208b@LAN(192.168.4.141)# access evan-dayy#208b_1742673990_create.py jennifer#b903 rm
+✓ Successfully removed from access list for jennifer#b903
 ```
-- Give access to a particular user; 
+
+### `all` Command `all <resource_id>` 
+```
+evan-dayy#208b@LAN(192.168.4.141)# all evan-dayy#208b_1742673990_create.py
+╭──────────────────────────────────────── Command Help ─────────────────────────────────────────╮
+│ Usage: all <resource_id> on|off                                                               │
+╰───────────────────────────────────────────────────────────────────────────────────────────────╯
+evan-dayy#208b@LAN(192.168.4.141)# all evan-dayy#208b_1742673990_create.py on
+✓ Resource is now shared with everyone
+evan-dayy#208b@LAN(192.168.4.141)# all evan-dayy#208b_1742673990_create.py off
+✓ Resource is now no longer shared with everyone
+```
+
+
+## Clipboad Sharing Commands
+```
+evan-dayy#208b@LAN(192.168.4.141)# clipboard
+╭──────────────────────────────────────── Command Help ─────────────────────────────────────────╮
+│ Usage: clipboard on|off                                                                       │
+╰───────────────────────────────────────────────────────────────────────────────────────────────╯
+evan-dayy#208b@LAN(192.168.4.141)# sc
+╭──────────────────────────────────────── Command Help ─────────────────────────────────────────╮
+│ Usage: sc to|from <username> add|rm                                                           │
+╰───────────────────────────────────────────────────────────────────────────────────────────────╯
+evan-dayy#208b@LAN(192.168.4.141)#
+```
+
+## Registry Server Mode
+```
+python registry_server.py --port 5050
+```
+
+```
+evan-dayy#208b@LAN(192.168.4.141)# registry
+╭─────────────────────────────────────── Registry Status ───────────────────────────────────────╮
+│ Not using registry server. Currently in UDP broadcast discovery mode.                         │
+│                                                                                               │
+│ To connect to a registry server, use: registry connect <server_url>                           │
+│ Example: registry connect 192.168.1.5:5000                                                    │
+╰───────────────────────────────────────────────────────────────────────────────────────────────╯
+
+evan-dayy#208b@LAN(192.168.4.141)# registry connect 192.168.4.141:5050
+Connecting to registry server at 192.168.4.141:5050...
+✓ Successfully registered with registry server
+Now discovering peers via both UDP broadcast and registry server
+```
+
+```
+╭────────────────────── Active Peers: 1 ───────────────────────╮╭────── Server Statistics ──────╮
+│                      Online Peers                            ││ ╭─────────────────┬────────╮  │
+│ ╭────────────────┬───────────────┬───────┬───────────╮       ││ │ Registrations   │ 0      │  │
+│ │ Username       │ IP Address    │ Port  │ Last Seen │       ││ │ Unregistrations │ 0      │  │
+│ ├────────────────┼───────────────┼───────┼───────────┤       ││ │ Heartbeats      │ 5      │  │
+│ │ evan-dayy#208b │ 192.168.4.141 │ 12345 │ 8s ago    │       ││ │ Peer Requests   │ 95     │  │
+│ ╰────────────────┴───────────────┴───────┴───────────╯       ││ │ Uptime          │ 1m 14s │  │
+│                                                              ││ ╰─────────────────┴────────╯  │
+│                                                              ││                               │
+│                                                              ││                               │
+╰──────────────────────────────────────────────────────────────╯╰───────────────────────────────╯
+```
