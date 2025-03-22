@@ -210,19 +210,20 @@ class UDPPeerDiscovery(PeerDiscovery):
                 self.debug_print(f"New peer detected via broadcast: {packet['username']} - announcing shared resources")
                 self._announce_resources_to_new_peer(packet['username'], addr[0])
 
-    def _announce_resources_to_new_peer(self, username: str, address: str) -> None:
+    def _announce_resources_to_new_peer(self, username: str, address: str, port: int = None) -> None:
         """Announce shared resources to a newly discovered peer.
         
         Args:
             username: The username of the new peer
             address: The IP address of the new peer
+            port: Optional specific port to use
         """
         peer = self.peers.get(username)
         if not peer:
             return
             
-        # Get peer's port (fallback to config port if not available)
-        target_port = getattr(peer, 'port', self.config.port)
+        # Get peer's port (use provided port, or peer's port attribute, or fallback to config port)
+        target_port = port if port is not None else getattr(peer, 'port', self.config.port)
         
         # Get resources the peer can access
         own_resources = [r for r in self.file_share_manager.shared_resources.values() 

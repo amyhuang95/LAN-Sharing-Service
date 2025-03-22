@@ -532,6 +532,17 @@ class FileShareManager:
             # Skip if we're the owner
             if resource.owner == self.username:
                 return
+                
+            # Get the owner's peer info to get the correct port
+            owner_peer = self.discovery.peers.get(resource.owner)
+            
+            # If we have the peer info, extract the actual port for FTP
+            owner_port = None
+            if owner_peer:
+                owner_port = getattr(owner_peer, 'port', None)
+                if owner_port is not None:
+                    owner_port += 1  # FTP port is base port + 1
+            
             # Check if we already have this resource
             existing_resource = self.received_resources.get(resource.id)
             # If we had the resource but no longer have access, remove it
@@ -564,10 +575,10 @@ class FileShareManager:
                         if resource.id in self.downloaded_resources:
                             self.downloaded_resources.remove(resource.id)
                         
-                        # Download the updated resource
+                        # Download the updated resource with correct port
                         download_thread = threading.Thread(
                             target=self._download_resource,
-                            args=(resource, addr[0])
+                            args=(resource, addr[0], owner_port)
                         )
                         download_thread.daemon = True
                         download_thread.start()
@@ -586,7 +597,7 @@ class FileShareManager:
                     if resource.id not in self.downloaded_resources:
                         download_thread = threading.Thread(
                             target=self._download_resource,
-                            args=(resource, addr[0])
+                            args=(resource, addr[0], owner_port)
                         )
                         download_thread.daemon = True
                         download_thread.start()
@@ -597,14 +608,18 @@ class FileShareManager:
             self.discovery.debug_print(f"Error handling resource announcement: {e}")
         
 
-    def _download_resource(self, resource: SharedResource, host_ip: str) -> None:
+    def _download_resource(self, resource: SharedResource, host_ip: str, port: int = None) -> None:
         """Download a resource from a peer.
         Args:
             resource: The resource to download.
             host_ip: The IP address of the host.
+            port: Optional specific port to use for FTP connection.
         """
         try:
-            self.debug_log(f"Downloading {os.path.basename(resource.path)} from {host_ip}...")
+            # Determine the FTP port to use
+            ftp_port = port if port is not None else self.ftp_address[1]
+            
+            self.debug_log(f"Downloading {os.path.basename(resource.path)} from {host_ip} using port {ftp_port}...")
             
             # Create destination path
             dest_dir = self.share_dir / resource.owner
@@ -619,9 +634,9 @@ class FileShareManager:
                 
                 self.debug_log(f"Removed old version of {dest_path}")
             
-            # Create FTP connection
+            # Create FTP connection with correct port
             ftp = ftplib.FTP()
-            ftp.connect(host_ip, self.ftp_address[1])
+            ftp.connect(host_ip, ftp_port)
             
             # Keep encoding as UTF-8 for command channel
             ftp.encoding = 'utf-8'  # Changed from None to 'utf-8'
@@ -652,6 +667,7 @@ class FileShareManager:
                 self.debug_log(f"All FTP login attempts failed - cannot download resource")
                 return
             
+            # Rest of the method remains the same...
             # Explicitly set binary mode for file transfers
             ftp.sendcmd('TYPE I')
             
@@ -740,7 +756,7 @@ class FileShareManager:
             # Log the full exception traceback for better debugging
             import traceback
             self.debug_log(f"Traceback: {traceback.format_exc()}")
-
+        
     def _download_directory_recursive(self, ftp, remote_dir, local_dir):
         """Download a directory recursively.
         Args:
