@@ -25,6 +25,7 @@ share/python-wheels/
 MANIFEST
 
 *_log.txt
+shared/
 
 # Installer logs
 pip-log.txt
