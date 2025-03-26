@@ -168,6 +168,8 @@ evan-dayy#208b@LAN(192.168.4.141)# all evan-dayy#208b_1742673990_create.py off
 
 
 ## Clipboad Sharing Commands
+Clipboard sharing feature allows user to copy text from one device and paste it on another easily.
+When user starts the app, the feature is turned off by default for security reason. To enable two-way exchange of clipboard content between two peers, both users first need to activate the feature from main menu, then add each other to their own sending and receiving list. This prevents unintended sharing of copied data.
 ```
 evan-dayy#208b@LAN(192.168.4.141)# clipboard
 ╭──────────────────────────────────────── Command Help ─────────────────────────────────────────╮
