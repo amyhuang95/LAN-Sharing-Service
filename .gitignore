@@ -25,6 +25,8 @@ share/python-wheels/
 MANIFEST
 
 *_log.txt
+.python-version
+.lanshare.conf
 shared/
 
 # Installer logs
