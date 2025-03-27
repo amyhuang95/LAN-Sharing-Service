@@ -1,4 +1,11 @@
 import streamlit as st
+import sys
+import os
+# Ensure the project root is in the Python path.
+# Adjust the number of ".." based on your file’s location.
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 # First add your sidebar content
 with st.sidebar:

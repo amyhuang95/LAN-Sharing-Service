@@ -17,36 +17,48 @@ import signal
 import logging
 import os
 import threading
+import subprocess
 
 from lanshare.config.settings import Config
 from lanshare.core.udp_discovery import UDPPeerDiscovery
 from lanshare.core.clipboard import Clipboard
 from lanshare.terminal_gui.session import InteractiveSession
+from lanshare.server.server import *  
 
-# Configure logging to suppress pyftpdlib messages
+# ----------------- Logging Configuration ----------------- #
 logging.basicConfig(level=logging.ERROR)
-for logger_name in ['pyftpdlib', 'pyftpdlib.server', 'pyftpdlib.handler', 
-                    'pyftpdlib.authorizer', 'pyftpdlib.filesystems']:
+for logger_name in [
+    'pyftpdlib',
+    'pyftpdlib.server',
+    'pyftpdlib.handler',
+    'pyftpdlib.authorizer',
+    'pyftpdlib.filesystems'
+]:
     logging.getLogger(logger_name).setLevel(logging.CRITICAL)
 
-# Override the default sys.excepthook to suppress errors during exit
+# ----------------- Global Variables ----------------- #
+discovery_service = None  # reference for cleanup
+
+# ----------------- Exception Hook ----------------- #
 def silent_excepthook(exc_type, exc_value, exc_traceback):
-    # Only show exceptions during normal operation, not during exit
+    """
+    Override the default sys.excepthook to suppress errors during exit.
+    Only show exceptions during normal operation, not during exit.
+    """
     if not sys._getframe(1).f_code.co_name == 'graceful_shutdown':
         sys.__excepthook__(exc_type, exc_value, exc_traceback)
 
-# Set the silent excepthook
 sys.excepthook = silent_excepthook
 
+# ----------------- Utility Functions ----------------- #
 def generate_user_id(username: str) -> str:
     """Generates a short random ID for the user.
 
     Concatenates provided username with first 4 characters of a UUID to create
     a new unique username. In case different users provide the same username, 
     they can still differentiate each other using the random UUID after its
-    username.    
+    username.
     """
-    
     random_id = str(uuid.uuid4())[:4]
     return f"{username}#{random_id}"
 
@@ -57,7 +69,6 @@ def create_lanshare_folder():
         # If folder exists from a previous session that didn't exit properly, clean it
         shutil.rmtree(shared_dir)
     
-    # Create a fresh directory
     shared_dir.mkdir(exist_ok=True)
     print(f"Created temporary folder: {shared_dir}")
     return shared_dir
@@ -72,20 +83,16 @@ def cleanup_lanshare_folder():
         except Exception as e:
             print(f"Error cleaning up folder: {e}")
 
-# Global reference to discovery service for cleanup
-discovery_service = None
-
+# ----------------- Cleanup and Shutdown ----------------- #
 def graceful_shutdown():
     """Perform a graceful shutdown of all services."""
     global discovery_service
     if discovery_service:
         try:
-            # Properly shut down the discovery service (which includes FTP server)
             discovery_service.cleanup()
         except Exception:
             pass  # Suppress any shutdown errors
     
-    # Now clean up the folder
     cleanup_lanshare_folder()
 
 def signal_handler(sig, frame):
@@ -94,6 +101,7 @@ def signal_handler(sig, frame):
     graceful_shutdown()
     sys.exit(0)
 
+# ----------------- Main ----------------- #
 def main():
     global discovery_service
     
@@ -111,10 +119,8 @@ def main():
     parser = argparse.ArgumentParser(description='LAN Peer Discovery Service')
     parser.add_argument('command', choices=['create'], help='Command to execute')
     parser.add_argument('--username', help='Username for the peer', required=False)
-    # This is the entry point to change differnet GUI
-    parser.add_argument("--gui", choices=['terminal', 'streamlit'], default='terminal', 
+    parser.add_argument("--gui", choices=['terminal', 'streamlit'], default='terminal',
                         help="Select GUI implementation (default: terminal)")
-    
     args = parser.parse_args()
     
     if args.command == 'create':
@@ -124,17 +130,17 @@ def main():
         # Generate username with random ID
         username_with_id = generate_user_id(args.username)
         
-        # Start the service
+        # Start the discovery service
         config = Config()
         discovery_service = UDPPeerDiscovery(username_with_id, config)
         discovery_service.start()
 
-        # Start clipboard sharing service (default off unless user enables it with command line args)
+        # Optionally start a clipboard service
         clipboard = Clipboard(discovery_service, config)
         
-        # Start appropriate GUI based on user selection
+        # Choose GUI
         if args.gui == 'terminal':
-            # Start terminal UI
+            # ---------------- Terminal GUI ----------------
             session = InteractiveSession(discovery_service, clipboard)
             
             # Completely suppress stderr and stdout for clean exit
@@ -144,19 +150,12 @@ def main():
                 def flush(self):
                     pass
             
-            # Save original stderr/stdout
-            original_stderr = sys.stderr
-            original_stdout = sys.stdout
-            
             try:
-                # Suppress pyftpdlib error messages during normal operation
                 devnull = open(os.devnull, 'w')
-                sys.stderr = devnull
-                
+                sys.stderr = devnull  # Suppress pyftpdlib messages
                 session.start()
                 
             except KeyboardInterrupt:
-                # On keyboard interrupt, suppress all output
                 print("\nExiting application...", flush=True)
                 
                 # Immediately redirect both stderr and stdout to suppress exit messages
@@ -167,8 +166,23 @@ def main():
                 threading.excepthook = lambda *args: None
         
         elif args.gui == 'streamlit':
-            print("Streamlit GUI is not yet implemented.")
-            print("This will be available in a future update.")
+            # ---------------- Web GUI ----------------
+            # 1) Start the Flask server from server.py in a background thread
+            flask_thread = threading.Thread(target=run_flask_server, daemon=True)
+            flask_thread.start()
+            print("[INFO] Flask server started on http://127.0.0.1:5000")
+
+            # 2) Launch the Streamlit app via subprocess
+            #    Pass the username so Streamlit can also use it
+            cmd = [
+                "streamlit", "run",
+                "lanshare/web_gui/streamlit_app.py",
+                "--",
+                f"--username={username_with_id}"
+            ]
+            subprocess.run(cmd)
+            
+            # After Streamlit exits, gracefully shut down
             graceful_shutdown()
             sys.exit(0)
 

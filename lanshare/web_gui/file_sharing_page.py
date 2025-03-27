@@ -1,34 +1,42 @@
 import streamlit as st
 import pandas as pd
 
-# Title
-st.markdown("<h2 style='color: #E4E4E4;'>Shared Resources</h2>", unsafe_allow_html=True)
+st.markdown("## Shared Resources")
 
-# Table data
-data = {
-    "Type": ["File", "File"],
-    "Name": ["text.txt", "text2.txt"],
-    "Owner": ["username", "username"],
-    "Access": ["peername", "peername"],
-    "Shared On": ["2024/03/02", "2024/03/03"],
-    "Last Modified": ["2024/03/10", "2024/03/10"]
-}
+# Sample table data
+data = [
+    {
+        "Type": "File",
+        "Name": "text.txt",
+        "Owner": "username",
+        "Access": "peername",
+        "Shared On": "2024/03/02",
+        "Last Modified": "2024/03/10",
+    },
+    {
+        "Type": "File",
+        "Name": "text2.txt",
+        "Owner": "username",
+        "Access": "peername",
+        "Shared On": "2024/03/03",
+        "Last Modified": "2024/03/10",
+    },
+]
 df = pd.DataFrame(data)
 
 # Display the table
-st.dataframe(df)
+# st.table(df)  # or st.dataframe(df)
+st.table(df)
 
 st.markdown("---")
 
-# Form-like inputs
+# 3. Form-like inputs
 st.subheader("Manage Shared Resources")
 
-
-new_resource = st.text_input("Add resource:")
+new_resource = st.text_input("Add resources to share:")
 add_access = st.text_input("Add user access:")
 remove_access = st.text_input("Remove user access:")
-share_everyone = st.toggle("Share with everyone")
+share_everyone = st.checkbox("Share with everyone")
 
-# Button to confirm changes
 if st.button("Apply Changes"):
     st.success("Changes have been applied (this is just a demo).")
