@@ -189,7 +189,7 @@ Background: In enterprise-grade internet (eduroam), broadcasting message is high
 What is it? A centralized server that record registered users' private IP and port numbers;
 ### Start the Registry Server
 ```
-python registry_server.py --port 5050
+python registry.py --port 5050
 ```
 
 ### Peer register to the Registry Server
