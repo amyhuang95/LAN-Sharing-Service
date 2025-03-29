@@ -1,17 +1,25 @@
 import streamlit as st
 import sys
+from streamlit_service import StreamlitService
+
 
 # Define the pages
-main_page = st.Page("home_page.py", title="Home Page", icon="🌐")
+home_page = st.Page("home_page.py", title="Home Page", icon="🌐")
 message_page = st.Page("message_page.py", title="Message", icon="🗣️")
 file_sharing_page = st.Page("file_sharing_page.py", title="Share Files", icon="🤝")
 clipboard_page = st.Page("clipboard_page.py", title="Clipboard", icon="📋")
 
 # Set up navigation
-pg = st.navigation([main_page, message_page, file_sharing_page, clipboard_page])
+pg = st.navigation([home_page, message_page, file_sharing_page, clipboard_page])
 
-# Setup username
-st.session_state["username"] = sys.argv[1]
+# Setup username & service instance
+@st.cache_resource
+def setup():
+    st.session_state["username"] = sys.argv[1]
+    port = int(sys.argv[2])
+    return StreamlitService.get_instance(st.session_state.username, port)
+
+service = setup()
 
 # Run the selected page
 pg.run()
