@@ -31,7 +31,7 @@ def main():
     
 
     while True:
-        peers = service.get_active_peers()
+        peers = service.discovery.list_peers()
 
         if not peers:
             active_peers_container.info("No active peers found.")
