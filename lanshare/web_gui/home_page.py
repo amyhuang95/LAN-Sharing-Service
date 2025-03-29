@@ -1,6 +1,6 @@
 import streamlit as st
 import time
-from streamlit_service import StreamlitService
+from lanshare.web_gui.service import LANSharingService
 
 # Get service instance
 st.sidebar.markdown("# Main page 🎈")
@@ -8,7 +8,7 @@ st.sidebar.markdown("# Main page 🎈")
 # Cache the service instance to keep it from page refresh
 @st.cache_resource
 def setup():
-    return StreamlitService.get_instance(st.session_state.username)
+    return LANSharingService.get_instance(st.session_state.username)
 
 
 

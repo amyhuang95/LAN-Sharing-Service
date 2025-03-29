@@ -1,6 +1,6 @@
 import streamlit as st
 import sys
-from streamlit_service import StreamlitService
+from lanshare.web_gui.service import LANSharingService
 
 
 # Define the pages
@@ -17,7 +17,7 @@ pg = st.navigation([home_page, message_page, file_sharing_page, clipboard_page])
 def setup():
     st.session_state["username"] = sys.argv[1]
     port = int(sys.argv[2])
-    return StreamlitService.get_instance(st.session_state.username, port)
+    return LANSharingService.get_instance(st.session_state.username, port)
 
 service = setup()
 

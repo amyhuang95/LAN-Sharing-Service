@@ -7,7 +7,7 @@ from lanshare.config.settings import Config
 from lanshare.core.udp_discovery import UDPPeerDiscovery
 from lanshare.core.clipboard import Clipboard
 
-class StreamlitService:
+class LANSharingService:
     """Service layer for Streamlit integration with LAN Sharing app."""
     
     _instance = None
