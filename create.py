@@ -175,8 +175,15 @@ def main():
                 threading.excepthook = lambda *args: None
         
         elif args.gui == 'streamlit':
-            print("Streamlit GUI is not yet implemented.")
-            print("This will be available in a future update.")
+            from streamlit.web import cli
+            
+            cmd = [
+                "lanshare/web_gui/streamlit_app.py",
+                username_with_id
+            ]
+
+            cli.main_run(cmd)
+
             graceful_shutdown()
             sys.exit(0)
 
