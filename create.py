@@ -127,21 +127,20 @@ def main():
         # Generate username with random ID
         username_with_id = generate_user_id(args.username)
         
-        # Start the service
-        config = Config()
-        # Set the custom port if specified
-        config.port = args.port
-        # Update clipboard port to be one higher than the main port
-        config.clipboard_port = args.port + 1
-        
-        discovery_service = UDPPeerDiscovery(username_with_id, config)
-        discovery_service.start()
-
-        # Start clipboard sharing service (default off unless user enables it with command line args)
-        clipboard = Clipboard(discovery_service, config)
-        
         # Start appropriate GUI based on user selection
         if args.gui == 'terminal':
+            # Start the service
+            config = Config()
+            # Set the custom port if specified
+            config.port = args.port
+            # Update clipboard port to be one higher than the main port
+            config.clipboard_port = args.port + 1
+            
+            discovery_service = UDPPeerDiscovery(username_with_id, config)
+            discovery_service.start()
+            # Start clipboard sharing service (default off unless user enables it with command line args)
+            clipboard = Clipboard(discovery_service, config)
+        
             # Start terminal UI
             session = InteractiveSession(discovery_service, clipboard)
             
@@ -179,7 +178,8 @@ def main():
             
             cmd = [
                 "lanshare/web_gui/streamlit_app.py",
-                username_with_id
+                username_with_id,
+                str(args.port) # streamlit cli does not take int
             ]
 
             cli.main_run(cmd)
