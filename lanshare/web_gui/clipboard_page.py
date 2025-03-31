@@ -62,9 +62,6 @@ def main():
                 curr_clips = clips.copy()
                 size = len(clips)
                 num_cols = 3
-                num_rows = size // num_cols
-                num_last_row = size % num_cols
-                num_rows += 1 if num_last_row > 0 else 0
 
                 for i in range(0, size, num_cols):
                     cols = st.columns(num_cols)
@@ -82,16 +79,6 @@ def main():
                             tile = cols[j].container(height=120, border=True)
                             tile.text(display_content)
                             tile.caption("-- " + source)
-
-                # for row in range(num_rows):
-                #     for col in st.columns(num_cols):
-                #         if i > size - 1:
-                #             tile = col.empty()
-                #         else:
-                #             tile = col.container(height=120, border=True)
-                #             tile.text(clips[i].content + "\n")
-                #             tile.caption("-- " + clips[i].source)
-                #         i += 1
 
         time.sleep(2) # refresh every 2 seconds
 
