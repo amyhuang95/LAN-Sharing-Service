@@ -5,18 +5,25 @@ from lanshare.web_gui.service import LANSharingService
 from lanshare.core.clipboard import Clipboard
 from lanshare.core.clipboard import Clip
 
-st.markdown("# Clipboard")
-st.sidebar.markdown("...")
+# Page configuration
+st.set_page_config(
+    page_title="LAN Share - Clipboard",
+    page_icon="📋",
+    layout="wide"
+)
 
 # Cache the service instance to keep it from page refresh
 @st.cache_resource
 def setup():
     return LANSharingService.get_instance(st.session_state.username)
 
-
-
 service = setup()
 clipboard: Clipboard = service.clipboard
+
+# initialize session state variables
+if "clipboard_status" not in st.session_state:
+    st.session_state["clipboard_status"] = clipboard.running
+
 
 def toggler():
     if not st.session_state.clipboard_status:
@@ -27,20 +34,21 @@ def toggler():
         st.session_state["clipboard_status"] = False
 
 def main():
-    
-    # initialize status to False
-    if "clipboard_status" not in st.session_state:
-        st.session_state["clipboard_status"] = clipboard.running
+    st.markdown("# 📋 Clipboard Sharing")
 
-    # Top section
-    toggle_label = (
-        "On"
-        if st.session_state.clipboard_status
-        else "Off"
-    )
-    st.toggle(toggle_label, value=st.session_state.clipboard_status, on_change=toggler)
+    with st.sidebar:
+        st.markdown("Copy something on your device and automatically share with active peers you selected!")
+        st.header("⚙️ Settings")
+        # Top section
+        toggle_label = (
+            "On"
+            if st.session_state.clipboard_status
+            else "Off"
+        )
+        st.toggle(toggle_label, value=st.session_state.clipboard_status, on_change=toggler)
     
     # Middle section
+    st.subheader("Clipboard History")
     clips_container = st.empty()
     curr_clips = []
     while st.session_state.clipboard_status:
@@ -58,16 +66,32 @@ def main():
                 num_last_row = size % num_cols
                 num_rows += 1 if num_last_row > 0 else 0
 
-                i = 0
-                for row in range(num_rows):
-                    for col in st.columns(num_cols):
-                        if i > size - 1:
-                            tile = col.empty()
-                        else:
-                            tile = col.container(height=120, border=True)
-                            tile.text(clips[i].content + "\n")
-                            tile.caption("-- " + clips[i].source)
-                        i += 1
+                for i in range(0, size, num_cols):
+                    cols = st.columns(num_cols)
+                    for j in range(num_cols):
+                        index = i + j
+                        if index < size:
+                            clip = clips[index]
+                            content = clip.content
+                            source = clip.source
+                            if len(content) > 150:
+                                display_content = content[:150] + "..."
+                            else:
+                                display_content = content
+                            
+                            tile = cols[j].container(height=120, border=True)
+                            tile.text(display_content)
+                            tile.caption("-- " + source)
+
+                # for row in range(num_rows):
+                #     for col in st.columns(num_cols):
+                #         if i > size - 1:
+                #             tile = col.empty()
+                #         else:
+                #             tile = col.container(height=120, border=True)
+                #             tile.text(clips[i].content + "\n")
+                #             tile.caption("-- " + clips[i].source)
+                #         i += 1
 
         time.sleep(2) # refresh every 2 seconds
 
