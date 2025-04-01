@@ -29,11 +29,11 @@ if "clipboard_status" not in st.session_state:
     st.session_state["clipboard_status"] = clipboard.running
     debug_log(f"Update clipboard_status: {st.session_state["clipboard_status"]}")
 if "cb_refresh_seconds" not in st.session_state:
-    st.session_state["cb_refresh_seconds"] = 2
+    st.session_state["cb_refresh_seconds"] = 1
 if "cb_alert_seconds" not in st.session_state:
     st.session_state["cb_alert_seconds"] = 1.5
 if "clips" not in st.session_state:
-    st.session_state["clips"] = clipboard.get_clipboard_history()
+    st.session_state["clips"] = []
 if "is_clips_changed" not in st.session_state:
     st.session_state["is_clips_changed"] = True
 
@@ -66,12 +66,11 @@ def clear_history():
     except Exception as e:
         st.error(f"Error clearing history: {str(e)}")
 
-def display_clipboard_history():
+def display_clipboard_history(placeholder):
     """Shows list of clips"""
     clips = st.session_state.clips
     debug_log(f"Displaying clipboard history... Number of clips: {len(clips)}")
-    
-    with st.container():
+    with placeholder.container():
         size = len(clips)
         num_cols = 3
         for i in range(0, size, num_cols):
@@ -146,13 +145,15 @@ def main():
     while st.session_state.clipboard_status:
         st.session_state.clips = curr_clips.copy()
         st.session_state.is_clips_changed = is_clips_changed
-        if not curr_clips:
+        if not st.session_state.clips:
+            cb_history_container.empty()
             cb_history_container.write("No clips yet...try copy something!")
         # update clipboard history when there is change to the content
         elif st.session_state.is_clips_changed:
             cb_history_container.empty()
             is_clips_changed = False
-            display_clipboard_history()
+            st.session_state.is_clips_changed = False
+            display_clipboard_history(cb_history_container)
         
         time.sleep(st.session_state.cb_refresh_seconds)
     
