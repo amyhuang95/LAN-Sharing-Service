@@ -33,13 +33,13 @@ if "cb_refresh_seconds" not in st.session_state:
 if "cb_alert_seconds" not in st.session_state:
     st.session_state["cb_alert_seconds"] = 1.5
 if "clips" not in st.session_state:
-    st.session_state["clips"] = []
+    st.session_state["clips"] = clipboard.get_clipboard_history()
 if "is_clips_changed" not in st.session_state:
     st.session_state["is_clips_changed"] = True
 
 # Global variables for access by background threads
 # (since Streamlit variables are not optimized for access by custom threads)
-curr_clips: List[Clip] = st.session_state.clips
+curr_clips: List[Clip] = None
 is_clips_changed = st.session_state.is_clips_changed
 
 def toggle_clipboard():
@@ -59,10 +59,9 @@ def clear_history():
     """Clear clipboard history"""
     try:
         clipboard.clip_list.clear()
+        st.session_state.clips.clear()
         debug_log("Clear clipboard history")
-        alert = st.success("Clipboard history cleared!")
-        time.sleep(st.session_state.cb_alert_seconds)
-        alert.empty()
+        st.success("Clipboard history cleared!")
     except Exception as e:
         st.error(f"Error clearing history: {str(e)}")
 
@@ -143,7 +142,8 @@ def main():
     cb_history_container = st.empty()
     
     while st.session_state.clipboard_status:
-        st.session_state.clips = curr_clips.copy()
+        if curr_clips is not None:
+            st.session_state.clips = curr_clips.copy()
         st.session_state.is_clips_changed = is_clips_changed
         if not st.session_state.clips:
             cb_history_container.empty()
