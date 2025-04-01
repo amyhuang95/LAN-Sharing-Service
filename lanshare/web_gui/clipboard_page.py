@@ -11,7 +11,7 @@ from lanshare.core.clipboard import Clip
 def setup():
     return LANSharingService.get_instance(st.session_state.username)
 
-# Custom debug log # TODO: maybe use a logging library
+# Custom debug log
 def debug_log(message: str):
     from datetime import datetime
     timestamp = datetime.now().strftime("%H:%M:%S")
@@ -30,17 +30,8 @@ if "clipboard_status" not in st.session_state:
     debug_log(f"Update clipboard_status: {st.session_state["clipboard_status"]}")
 if "cb_refresh_seconds" not in st.session_state:
     st.session_state["cb_refresh_seconds"] = 1
-if "cb_alert_seconds" not in st.session_state:
-    st.session_state["cb_alert_seconds"] = 1.5
 if "clips" not in st.session_state:
-    st.session_state["clips"] = clipboard.get_clipboard_history()
-if "is_clips_changed" not in st.session_state:
-    st.session_state["is_clips_changed"] = True
-
-# Global variables for access by background threads
-# (since Streamlit variables are not optimized for access by custom threads)
-curr_clips: List[Clip] = None
-is_clips_changed = st.session_state.is_clips_changed
+    st.session_state["clips"] = []
 
 def toggle_clipboard():
     """Toggle clipboard on and off based on its current status."""
@@ -59,15 +50,13 @@ def clear_history():
     """Clear clipboard history"""
     try:
         clipboard.clip_list.clear()
-        st.session_state.clips.clear()
+        st.toast("Clipboard history cleared!")
         debug_log("Clear clipboard history")
-        st.success("Clipboard history cleared!")
     except Exception as e:
         st.error(f"Error clearing history: {str(e)}")
 
-def display_clipboard_history(placeholder):
+def display_clipboard_history(placeholder, clips):
     """Shows list of clips"""
-    clips = st.session_state.clips
     debug_log(f"Displaying clipboard history... Number of clips: {len(clips)}")
     with placeholder.container():
         size = len(clips)
@@ -89,23 +78,7 @@ def display_clipboard_history(placeholder):
                     tile.text(display_content)
                     tile.caption("-- " + source)
 
-
-def _update_clips():
-    """Background process to detect new clips"""
-    global is_clips_changed, curr_clips
-    while True:
-        try:
-            clips = clipboard.get_clipboard_history()
-            if clips != curr_clips:
-                curr_clips = clips.copy()
-                debug_log("Current clip history updated")
-                is_clips_changed = True
-        except Exception as e:
-            debug_log(f"Error updating clips: {e}")
-        time.sleep(1) # refresh every 1 second
-
 def main():
-    global is_clips_changed
     st.markdown("# 📋 Clipboard Sharing")
 
     # Side Bar
@@ -124,45 +97,32 @@ def main():
     # Check whether the feature is activated
     if not st.session_state.clipboard_status:
         st.info("Clipboard sharing is not enabled. Toggled the setting in the sidebar to activate the feature.")
-    else:
-        # Start background threads to get new clips
-        if st.session_state.clipboard_status:
-            # Only start a new thread if one isn't already running
-            for thread in threading.enumerate():
-                if thread.name == "clipboard_updater":
-                    debug_log("Background thread - clipboard_updater already working...")
-                    break
-            else:
-                update_thread = threading.Thread(target=_update_clips, name="clipboard_updater", daemon=True)
-                update_thread.start()
-                debug_log("Background thread - clipboard_updater started...")
+        return
 
     # Main Section - Top
     st.subheader("Clipboard History")
     cb_history_container = st.empty()
-    
+    curr_clips = []
+
+    # Refresh the main section
     while st.session_state.clipboard_status:
-        if curr_clips is not None:
-            st.session_state.clips = curr_clips.copy()
-        st.session_state.is_clips_changed = is_clips_changed
-        if not st.session_state.clips:
-            cb_history_container.empty()
+        # Clipboard History
+        clips: List[Clip] = clipboard.get_clipboard_history()
+        debug_log(f"st.session_state.clips[{len(st.session_state.clips)}] - clips[{len(clips)}]")
+        if not clips:
             cb_history_container.write("No clips yet...try copy something!")
-        # update clipboard history when there is change to the content
-        elif st.session_state.is_clips_changed:
+            st.session_state.clips.clear()
+        elif clips != curr_clips:
             cb_history_container.empty()
-            is_clips_changed = False
-            st.session_state.is_clips_changed = False
-            display_clipboard_history(cb_history_container)
+            curr_clips = clips.copy()
+            display_clipboard_history(cb_history_container, curr_clips)
         
         time.sleep(st.session_state.cb_refresh_seconds)
     
 
     # clips_container = st.empty()
     # curr_clips = []
-    # if st.session_state.clipboard_status and len(curr_clips) > 0:
-    #     st.button("Clear Clipboard History", on_click=clear_history)
-
+    
     # while st.session_state.clipboard_status:
     #     clips: List[Clip] = clipboard.get_clipboard_history()
 
