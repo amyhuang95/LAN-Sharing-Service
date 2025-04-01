@@ -5,12 +5,12 @@ from lanshare.web_gui.service import LANSharingService
 from lanshare.core.clipboard import Clipboard
 from lanshare.core.clipboard import Clip
 
-# Page configuration
-st.set_page_config(
-    page_title="LAN Share - Clipboard",
-    page_icon="📋",
-    layout="wide"
-)
+# # Page configuration
+# st.set_page_config(
+#     page_title="LAN Share - Clipboard",
+#     page_icon="📋",
+#     layout="wide"
+# )
 
 # Cache the service instance to keep it from page refresh
 @st.cache_resource

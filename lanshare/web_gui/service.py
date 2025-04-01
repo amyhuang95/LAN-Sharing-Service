@@ -6,7 +6,7 @@ It uses a static variable to ensure all pages in the Streamlit share the same se
 from lanshare.config.settings import Config
 from lanshare.core.udp_discovery import UDPPeerDiscovery
 from lanshare.core.clipboard import Clipboard
-from lanshare.core.file_share import SharedResource, FileShareManager
+from lanshare.core.file_share import FileShareManager
 
 class LANSharingService:
     """Service layer for Streamlit integration with LAN Sharing app."""
@@ -33,14 +33,13 @@ class LANSharingService:
             
         self.discovery = UDPPeerDiscovery(self.username, self.config)
         self.clipboard = Clipboard(self.discovery, self.config)
-        
-        # Initialize File Sharing components
         self.file_share_manager = FileShareManager(self.username, self.discovery)
         
         # Start background services
         self.discovery.start()
-        self.file_share_manager.start()  # Start file sharing service
-        
+
+        # Start file sharing service
+        self.file_share_manager.start()  
         # Status tracking
         self.clipboard_active = False
         self.file_sharing_active = True
