@@ -1,6 +1,5 @@
 from typing import List
 import streamlit as st
-import threading
 import time
 from lanshare.web_gui.service import LANSharingService
 from lanshare.core.clipboard import Clipboard
@@ -155,7 +154,7 @@ def display_receive_peers(placeholder):
                         st.button("Remove", on_click=clipboard.remove_receiving_peer, args=[receive_peer])
 
 def main():
-    st.markdown("# 📋 Clipboard Sharing")
+    st.title("📋 Clipboard Sharing")
 
     # Side Bar
     with st.sidebar:
@@ -169,7 +168,7 @@ def main():
                   help="Turn clipboard sharing on or off")
         st.button("Clear Clipboard History", on_click=clear_history)
     
-    # Check whether the feature is activated
+    # Check whether the feature is activated, don't render other component if service is not activated
     if not st.session_state.clipboard_status:
         st.info("Clipboard sharing is not enabled. Toggled the setting in the sidebar to activate the feature.")
         return
@@ -188,7 +187,7 @@ def main():
     display_send_peers(bottom_left)
     display_receive_peers(bottom_right)
 
-    # Refresh the main section
+    # Refresh data in the main section
     while st.session_state.clipboard_status:
         changed = False
 
