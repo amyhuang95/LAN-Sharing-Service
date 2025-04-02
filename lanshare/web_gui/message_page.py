@@ -86,7 +86,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("Messages ✉️")
+st.title("✉️ Messages")
 
 @st.cache_resource
 def setup():
@@ -114,7 +114,7 @@ def main():
 
     # ---- LEFT SIDEBAR ----
     with col1:
-        st.markdown("### Online Users 🦖🦖🦖")
+        st.subheader("Online Users 🦖🦖🦖", divider=True)
         search_query = st.text_input("Search users...", 
                                    key="user_search",
                                    placeholder="Search users...",
@@ -142,7 +142,7 @@ def main():
 
     # ---- RIGHT CHAT AREA ----
     with col2:
-        st.markdown("### Conversation 💭💭💭")
+        st.subheader("Conversation 💭💭💭", divider=True)
 
         if st.session_state.selected_user:
             current_user = st.session_state.selected_user
