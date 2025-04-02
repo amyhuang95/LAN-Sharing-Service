@@ -102,6 +102,9 @@ def main():
     service = setup()
     discovery = service.discovery
 
+    with st.sidebar:
+        st.markdown("Find a friend to chat with!!!")
+
     # Auto-refresh only when in a chat (every 2 seconds)
     if st.session_state.selected_user:
         st_autorefresh(interval=2000, key="chat_refresh")

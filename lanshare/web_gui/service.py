@@ -6,12 +6,12 @@ It uses a static variable to ensure all pages in the Streamlit share the same se
 from lanshare.config.settings import Config
 from lanshare.core.udp_discovery import UDPPeerDiscovery
 from lanshare.core.clipboard import Clipboard
+from lanshare.core.file_share import FileShareManager
 
 class LANSharingService:
     """Service layer for Streamlit integration with LAN Sharing app."""
     
     _instance = None
-    
     @classmethod
     def get_instance(cls, username: str, port: int = None):
         """Singleton pattern to ensure only one service instance at a time."""
@@ -33,12 +33,16 @@ class LANSharingService:
             
         self.discovery = UDPPeerDiscovery(self.username, self.config)
         self.clipboard = Clipboard(self.discovery, self.config)
+        self.file_share_manager = FileShareManager(self.username, self.discovery)
         
         # Start background services
         self.discovery.start()
-        
+
+        # Start file sharing service
+        self.file_share_manager.start()  
         # Status tracking
         self.clipboard_active = False
+        self.file_sharing_active = True
     
     def stop(self):
         """Stop all services."""
@@ -46,6 +50,9 @@ class LANSharingService:
         if self.clipboard_active:
             self.clipboard.stop()
             self.clipboard_active = False
+        
+        if self.file_sharing_active:
+            self.file_share_manager.stop()
+            self.file_sharing_active = False
+            
         self.discovery.stop()
-    
-    
