@@ -167,6 +167,7 @@ def main():
                     st.session_state.message_count[current_user] = current_count
             else:
                 st.session_state.message_count[current_user] = current_count
+                
             
             # Message display
             if messages:

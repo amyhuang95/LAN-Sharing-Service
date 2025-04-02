@@ -26,10 +26,11 @@ def sync_shared_directory(manager, user_share_dir):
     """Ensure all files in shared directory are registered"""
     shared_files = {Path(r.path).name for r in manager.shared_resources.values()}
     for item in Path(user_share_dir).iterdir():
+        if item.name.startswith('.'):
+            continue  # Skip hidden/system files
         if item.name not in shared_files:
             try:
-                # Auto-register in readonly mode
-                resource = manager.share_resource(str(item), is_directory=item.is_dir(), readonly=True)
+                resource = manager.share_resource(str(item))
                 if resource:
                     print(f"Synced: {item.name}")
             except Exception as e:
