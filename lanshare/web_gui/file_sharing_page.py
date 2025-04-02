@@ -68,46 +68,43 @@ def main():
         col.write(f"**{header}**")
 
     for resource in shared_resources:
-        if (resource.shared_to_all or 
-            resource.owner == service.username or 
-            service.username in resource.allowed_users):
-            cols = st.columns([1, 2, 1, 1, 1, 1, 1])
+        cols = st.columns([1, 2, 1, 1, 1, 1, 1])
 
-            try:
-                filename = Path(resource.path).name
-            except (AttributeError, TypeError):
-                filename = str(resource.path)
+        try:
+            filename = Path(resource.path).name
+        except (AttributeError, TypeError):
+            filename = str(resource.path)
 
-            access = "Everyone" if resource.shared_to_all else f"{len(resource.allowed_users)} users"
+        access = "Everyone" if resource.shared_to_all else f"{len(resource.allowed_users)} users"
 
-            with cols[0]: 
-                st.write("📁" if resource.is_directory else "📄")
-            with cols[1]:
-                if st.button(filename, key=f"btn_{resource.id}"):
-                    st.session_state.selected_resource = resource
-            with cols[2]: st.write(resource.owner)
-            with cols[3]: st.write(access)
-            with cols[4]: st.write(format_timestamp(resource.timestamp))
-            with cols[5]: 
-                st.write(time.strftime("%Y-%m-%d %H:%M", time.localtime(resource.modified_time)))
-            with cols[6]:
-                if resource.owner == service.username:
-                    if st.button("❌", key=f"remove_{resource.id}"):
-                        try:
-                            if resource.is_directory:
-                                shared_path = Path(manager.user_share_dir) / filename
-                                if shared_path.exists():
-                                    if os.path.isdir(shared_path):
-                                        os.rmdir(shared_path)
-                                    else:
-                                        os.remove(shared_path)
-                            del manager.shared_resources[resource.id]
-                            if st.session_state.selected_resource and st.session_state.selected_resource.id == resource.id:
-                                st.session_state.selected_resource = None
-                            st.success(f"Removed {filename} from shared resources")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Error removing resource: {str(e)}")
+        with cols[0]: 
+            st.write("📁" if resource.is_directory else "📄")
+        with cols[1]:
+            if st.button(filename, key=f"btn_{resource.id}"):
+                st.session_state.selected_resource = resource
+        with cols[2]: st.write(resource.owner)
+        with cols[3]: st.write(access)
+        with cols[4]: st.write(format_timestamp(resource.timestamp))
+        with cols[5]: 
+            st.write(time.strftime("%Y-%m-%d %H:%M", time.localtime(resource.modified_time)))
+        with cols[6]:
+            if resource.owner == service.username:
+                if st.button("❌", key=f"remove_{resource.id}"):
+                    try:
+                        if resource.is_directory:
+                            shared_path = Path(manager.user_share_dir) / filename
+                            if shared_path.exists():
+                                if os.path.isdir(shared_path):
+                                    os.rmdir(shared_path)
+                                else:
+                                    os.remove(shared_path)
+                        del manager.shared_resources[resource.id]
+                        if st.session_state.selected_resource and st.session_state.selected_resource.id == resource.id:
+                            st.session_state.selected_resource = None
+                        st.success(f"Removed {filename} from shared resources")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error removing resource: {str(e)}")
 
     st.markdown("---")
 
@@ -194,7 +191,6 @@ def main():
                         st.rerun()
                     else:
                         st.error("Failed to revoke access")
-
 
 if __name__ == "__main__":
     main()
