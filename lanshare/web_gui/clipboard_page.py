@@ -41,18 +41,33 @@ if "cb_receive_peers" not in st.session_state:
     st.session_state["cb_receive_peers"] = set()
     debug_log("Initialize session_state.cb.receive_peers")
 
+def sync_state_with_service():
+    """Synchronize the session state with the clipboard service state"""
+    # Update service running status
+    # st.session_state.clipboard_status = clipboard.running
+    
+    # Update clips
+    st.session_state.clips = clipboard.get_clipboard_history().copy()
+    
+    # Update peers
+    st.session_state.cb_online_peers = set(clipboard.discovery.list_peers().keys())
+    st.session_state.cb_send_peers = clipboard.send_to_peers.copy()
+    st.session_state.cb_receive_peers = clipboard.receive_from_peers.copy()
+
 def toggle_clipboard():
     """Toggle clipboard on and off based on its current status."""
     if not st.session_state.clipboard_status:
         clipboard.start()
         debug_log("Start clipboard service")
-        st.session_state["clipboard_status"] = True
-        debug_log(f"Update clipboard_status: {st.session_state["clipboard_status"]}")
+        # st.session_state["clipboard_status"] = True
+        # debug_log(f"Update clipboard_status: {st.session_state.clipboard_status}")
     else:
         clipboard.stop()
         debug_log("Stop clipboard service")
-        st.session_state["clipboard_status"] = False
-        debug_log(f"Update clipboard_status: {st.session_state["clipboard_status"]}")
+        # st.session_state["clipboard_status"] = False
+        # debug_log(f"Update clipboard_status: {st.session_state.clipboard_status}")
+    sync_state_with_service()
+    debug_log(f"clipboard_status: {st.session_state.clipboard_status}")
 
 def clear_history():
     """Clear clipboard history"""
@@ -63,6 +78,7 @@ def clear_history():
     except Exception as e:
         st.toast(f"Error clearing history. Please refresh the page them retry.", icon="❌")
         debug_log(f"Error clearing history: {str(e)}")
+    sync_state_with_service()
 
 def display_clipboard_history(placeholder):
     """Shows list of clips"""
@@ -90,71 +106,95 @@ def display_clipboard_history(placeholder):
 
 def display_send_peers(placeholder):
     """Show the send to peers section"""
-    send_peers_container = st.empty()
     with placeholder.container():
         st.subheader("Send To Peers", divider=True, help="Share clipboard with these peers.")
         # check if any online peers
         if not st.session_state.cb_online_peers:
             placeholder.info("No active peers found.")
             return
-        
+        placeholder.empty()
         # Select box to add new peers
         available_send_peers = st.session_state.cb_online_peers - st.session_state.cb_send_peers
+        debug_log(f"available_send_peers=[{len(available_send_peers)}] online_peers=[{len(st.session_state.cb_online_peers)}] send_peers=[{len(st.session_state.cb_send_peers)}]")
         placeholder_text = "Add a peer" if available_send_peers else "No available peers"
-        send_option = st.selectbox(available_send_peers,
-                                    index=None,
-                                    placeholder=placeholder_text,
-                                    disabled=not(available_send_peers),
-                                    on_change=clipboard.add_sending_peer,
-                                    args=[send_option])
+        option = st.selectbox(label="Add a peer to share clipboard",
+                    label_visibility="collapsed",
+                    index=None,
+                    options=available_send_peers,
+                    placeholder=placeholder_text,
+                    disabled=len(available_send_peers)==0)
+        if option:
+            clipboard.add_sending_peer(option)
+            sync_state_with_service()
         # List all added peers
+        send_peers_container = st.empty()
         if not st.session_state.cb_send_peers:
             send_peers_container.info("No peer added in the sending list yet!")
             return
-        with send_peers_container.container(height=300, border=True):
+        send_peers_container.empty()
+        with send_peers_container.container():
             # Each peer holds a container with a remove btn
             for send_peer in st.session_state.cb_send_peers:
-                with st.container():
+                with st.container(height=50, border=False):
                     peer_left_col, peer_right_col = st.columns(2)
                     peer_left_col.write(send_peer)
                     with peer_right_col:
-                        st.button("Remove", on_click=clipboard.remove_sending_peer, args=[send_peer])
-    
+                        click = st.button(label="", 
+                                  icon="❌", 
+                                  type="tertiary",
+                                  on_click=clipboard.remove_sending_peer, 
+                                  args=(send_peer,), 
+                                  key="s_" + send_peer)
+                        if click:
+                            sync_state_with_service()
 
 def display_receive_peers(placeholder):
     """Show the receive from peers section"""
-    receive_peers_container = st.empty()
     with placeholder.container():
         st.subheader("Receive From Peers", divider=True, help="Receive clips shared by these peers.")
         # check if any online peers
         if not st.session_state.cb_online_peers:
             placeholder.info("No active peers found.")
             return
-        
+        placeholder.empty()
         # Select box to add new peers
         available_receive_peers = st.session_state.cb_online_peers - st.session_state.cb_receive_peers
+        debug_log(f"available_receive_peers=[{len(available_receive_peers)}] online_peers=[{len(st.session_state.cb_online_peers)}] receive_peers=[{len(st.session_state.cb_receive_peers)}]")
         placeholder_text = "Add a peer" if available_receive_peers else "No available peers"
-        receive_option = st.selectbox(available_receive_peers,
-                                    index=None,
-                                    placeholder=placeholder_text,
-                                    disabled=not(available_receive_peers),
-                                    on_change=clipboard.add_receiving_peer,
-                                    args=[receive_option])
+        option = st.selectbox(label="Add a peer to receive clipboard",
+                     label_visibility="collapsed",
+                     index=None,
+                    options=available_receive_peers,
+                    placeholder=placeholder_text,
+                    disabled=len(available_receive_peers)==0)
+        if option:
+            clipboard.add_receiving_peer(option)
+            sync_state_with_service()
         # List all added peers
+        receive_peers_container = st.empty()
         if not st.session_state.cb_receive_peers:
             receive_peers_container.info("No peer added to accept clipboards yet!")
             return
-        with receive_peers_container.container(height=300, border=True):
+        receive_peers_container.empty()
+        with receive_peers_container.container():
             # Each peer holds a container with a remove btn
             for receive_peer in st.session_state.cb_receive_peers:
-                with st.container():
+                with st.container(height=50, border=False):
                     rec_left_col, rec_right_col = st.columns(2)
                     rec_left_col.write(receive_peer)
                     with rec_right_col:
-                        st.button("Remove", on_click=clipboard.remove_receiving_peer, args=[receive_peer])
+                        click = st.button(label="", 
+                                  icon="❌", 
+                                  type="tertiary",
+                                  on_click=clipboard.remove_receiving_peer, 
+                                  args=(receive_peer,), 
+                                  key="r_" + receive_peer)
+                        if click:
+                            sync_state_with_service()
 
 def main():
     st.title("📋 Clipboard Sharing")
+    sync_state_with_service()
 
     # Side Bar
     with st.sidebar:
@@ -162,10 +202,12 @@ def main():
         st.header("⚙️ Settings")
         toggle_label = "Status: "
         toggle_label += "On" if st.session_state.clipboard_status else "Off"
-        st.toggle(toggle_label, 
+        status = st.toggle(toggle_label, 
                   value=st.session_state.clipboard_status, 
                   on_change=toggle_clipboard, 
+                  key="clipboard_toggler",
                   help="Turn clipboard sharing on or off")
+        st.session_state.clipboard_status = status
         st.button("Clear Clipboard History", on_click=clear_history)
     
     # Check whether the feature is activated, don't render other component if service is not activated
@@ -188,7 +230,7 @@ def main():
     display_receive_peers(bottom_right)
 
     # Refresh data in the main section
-    while st.session_state.clipboard_status:
+    if st.session_state.clipboard_status:
         changed = False
 
         # Clipboard History data
@@ -212,11 +254,16 @@ def main():
             st.session_state.cb_receive_peers = receive_peers.copy()
             changed = True
         
-        # refresh page if there is new data
-        if changed:
-            st.rerun()
+        # Set up auto-refresh
+        st.empty()  # This is a placeholder that will trigger the refresh
+        time.sleep(1)  # Wait briefly
+        st.rerun()  # Rerun after updating data once
 
-        time.sleep(1) # refresh every 1 second
+        # # refresh page if there is new data
+        # if changed:
+        #     st.rerun()
+
+        # time.sleep(1) # refresh every 1 second
 
 if __name__ == "__main__":
     main()
