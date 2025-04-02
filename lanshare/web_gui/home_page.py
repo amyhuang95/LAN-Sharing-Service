@@ -2,15 +2,10 @@ import streamlit as st
 import time
 from lanshare.web_gui.service import LANSharingService
 
-# Get service instance
-st.sidebar.markdown("# Main page 🎈")
-
 # Cache the service instance to keep it from page refresh
 @st.cache_resource
 def setup():
     return LANSharingService.get_instance(st.session_state.username)
-
-
 
 def main():
     service = setup()
@@ -18,7 +13,7 @@ def main():
     st.markdown(f"### Welcome to LAN Share, `{service.username}`!")
     st.write(
     "You can interact with others in the local network easily for the following tasks:\n\n"
-    "   👈 **Share files and directories**  \n"
+    "   🗂️ **Share files and directories**  \n"
     "   💬 **Chat with others**  \n"
     "   📋 **Share clipboard contents**  \n\n"
     "👈 Open the side bar and start sharing!"
@@ -28,7 +23,6 @@ def main():
     st.subheader("Online Users")
 
     active_peers_container = st.empty()
-    
 
     while True:
         peers = service.discovery.list_peers()

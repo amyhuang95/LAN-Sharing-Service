@@ -39,7 +39,8 @@ class LANSharingService:
         self.discovery.start()
 
         # Start file sharing service
-        self.file_share_manager.start()  
+        self.file_share_manager.start()
+        
         # Status tracking
         self.clipboard_active = False
         self.file_sharing_active = True
