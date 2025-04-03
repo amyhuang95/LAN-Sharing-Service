@@ -4,6 +4,7 @@ from pathlib import Path
 from datetime import datetime
 import time
 import os 
+import json
 from streamlit_autorefresh import st_autorefresh
 
 # Initialize session state
@@ -13,6 +14,10 @@ if 'selected_resource' not in st.session_state:
 # Add debug toggle to session state
 if 'show_debug' not in st.session_state:
     st.session_state.show_debug = False
+    
+# Add force refresh counter to trigger full refreshes
+if 'refresh_counter' not in st.session_state:
+    st.session_state.refresh_counter = 0
 
 @st.cache_resource
 def setup():
@@ -27,18 +32,83 @@ def format_timestamp(timestamp):
         return timestamp.strftime("%Y-%m-%d %H:%M")
     return timestamp
 
+
+def verify_received_files(manager):
+    """Verify that received files still exist on disk and in received_resources."""
+    resources_to_remove = []
+    
+    # Check if files actually exist in the shared directory
+    for resource_id, resource in manager.received_resources.items():
+        if resource.owner != manager.username:  # Only check resources owned by others
+            target_path = manager.share_dir / resource.owner / Path(resource.path).name
+            if not target_path.exists():
+                # File doesn't exist on disk
+                resources_to_remove.append(resource_id)
+    
+    # Remove invalid resources
+    for resource_id in resources_to_remove:
+        if resource_id in manager.received_resources:
+            resource = manager.received_resources[resource_id]
+            del manager.received_resources[resource_id]
+            # Also remove from downloaded resources
+            if resource_id in manager.downloaded_resources:
+                manager.downloaded_resources.remove(resource_id)
+    
+    # Save updated resources
+    if resources_to_remove:
+        manager._save_resources()
+        return len(resources_to_remove)
+    
+    return 0
+
+
 def main():
     service = setup()
     if not service:
         st.error("Service not initialized. Please launch from main app.")
         st.stop()
 
-    st_autorefresh(interval=5000, key="file_sharing_refresh")
+    # Shorter refresh interval for more responsiveness
+    st_autorefresh(interval=3000, key=f"file_sharing_refresh_{st.session_state.refresh_counter}")
 
     with st.sidebar:
         st.markdown("Find a file or directory, share it with your friends!!!")
-        if st.button("🔄 Sync Shared Files"):
-            st.rerun()
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🔄 Sync Files"):
+                # Force a full reload of resources by incrementing the counter
+                st.session_state.refresh_counter += 1
+                # Also reload resource files from disk
+                service.file_share_manager._load_resources()
+                # Verify received files are valid
+                removed = verify_received_files(service.file_share_manager)
+                if removed > 0:
+                    st.success(f"Removed {removed} invalid resources")
+                st.rerun()
+        
+        with col2:
+            if st.button("🔍 Re-scan"):
+                # Rebroadcast presence to ensure peers know you exist
+                try:
+                    packet = {
+                        'type': 'announcement',
+                        'username': service.username,
+                        'timestamp': datetime.now().isoformat()
+                    }
+                    service.discovery.udp_socket.sendto(
+                        json.dumps(packet).encode(),
+                        ('<broadcast>', service.discovery.config.port)
+                    )
+                    # Re-announce all resources
+                    for resource in service.file_share_manager.shared_resources.values():
+                        service.file_share_manager._announce_resource(resource)
+                    st.success("Re-announced presence and resources")
+                except Exception as e:
+                    st.error(f"Error re-announcing: {e}")
+                
+                st.session_state.refresh_counter += 1
+                st.rerun()
         
         # Add a debug toggle to help troubleshoot
         st.session_state.show_debug = st.checkbox("Show debug info", value=st.session_state.show_debug)
@@ -47,6 +117,15 @@ def main():
     discovery = service.discovery
 
     st.markdown("# 🔄 Shared Resources")
+
+    # Force a reload of resources from disk before displaying
+    try:
+        manager._load_resources()
+        # Verify received files
+        verify_received_files(manager)
+    except Exception as e:
+        if st.session_state.show_debug:
+            st.error(f"Error loading resources: {str(e)}")
 
     # Get all resources: both shared and received
     all_resources = []
@@ -71,6 +150,29 @@ def main():
         st.write(f"**Number of received resources:** {len(received_resources)}")
         st.write(f"**Total resources:** {len(all_resources)}")
         
+        # Show file sharing directory structure
+        st.write(f"**Share directory:** {manager.share_dir}")
+        if manager.share_dir.exists():
+            for p in manager.share_dir.glob("*"):
+                if p.is_dir():
+                    st.write(f"- Directory: {p.name} (contains {len(list(p.glob('*')))} items)")
+                else:
+                    st.write(f"- File: {p.name}")
+        
+        # Show resource file
+        resource_file = manager.user_share_dir / '.shared_resources.json'
+        if resource_file.exists():
+            st.write(f"**Resource file exists:** {resource_file}")
+            try:
+                with open(resource_file, 'r') as f:
+                    data = json.load(f)
+                    st.write(f"Shared count in file: {len(data.get('shared', []))}")
+                    st.write(f"Received count in file: {len(data.get('received', []))}")
+            except Exception as e:
+                st.write(f"Error reading resource file: {e}")
+        else:
+            st.write(f"**Resource file not found:** {resource_file}")
+            
         # Show peers
         peers = discovery.list_peers()
         st.write(f"**Active peers:** {len(peers)}")
@@ -92,6 +194,10 @@ def main():
     for col, header in zip(cols, headers):
         col.write(f"**{header}**")
 
+    # Check if no resources to display
+    if not all_resources:
+        st.info("No shared resources available. Share a file or folder to get started!")
+
     for resource in all_resources:
         cols = st.columns([1, 2, 1, 1, 1, 1, 1])
 
@@ -104,18 +210,20 @@ def main():
         
         # Highlight if resource is owned by you
         is_own = resource.owner == service.username
-        name_style = "" if is_own else "color: blue;"
+        owner_display = "You" if is_own else resource.owner
 
         with cols[0]: 
             st.write("📁" if resource.is_directory else "📄")
         with cols[1]:
-            if st.button(filename, key=f"btn_{resource.id}"):
-                st.session_state.selected_resource = resource
-        with cols[2]: 
+            # Show blue text for files shared with you
             if is_own:
-                st.write("You")
+                if st.button(filename, key=f"btn_{resource.id}"):
+                    st.session_state.selected_resource = resource
             else:
-                st.write(resource.owner)
+                st.markdown(f"<span style='color: blue;'>{filename}</span>", unsafe_allow_html=True)
+                if st.button("Select", key=f"btn_{resource.id}"):
+                    st.session_state.selected_resource = resource
+        with cols[2]: st.write(owner_display)
         with cols[3]: st.write(access)
         with cols[4]: st.write(format_timestamp(resource.timestamp))
         with cols[5]: 
@@ -124,25 +232,36 @@ def main():
             except:
                 st.write("Unknown")
         with cols[6]:
-            if resource.owner == service.username:
+            if is_own:
+                # For your own resources, show remove button
                 if st.button("❌", key=f"remove_{resource.id}"):
                     try:
-                        # Instead of deleting, just disable share_to_all
-                        if manager.set_share_to_all(resource.id, False):
-                            # Also remove all individual access
-                            for user in list(resource.allowed_users):
-                                manager.update_resource_access(resource.id, user, add=False)
-                            
-                            st.success(f"Access revoked for all users to {filename}")
-
+                        # First disable sharing with everyone
+                        manager.set_share_to_all(resource.id, False)
+                        
+                        # Remove all individual access permissions
+                        for user in list(resource.allowed_users):
+                            manager.update_resource_access(resource.id, user, add=False)
+                        
+                        # Delete from shared_resources dictionary
+                        if resource.id in manager.shared_resources:
                             del manager.shared_resources[resource.id]
-                            manager._remove_shared_resource(resource)
-                            st.rerun()
-                        else:
-                            st.error("Failed to revoke access")
-                            
+                        
+                        # Clean up the actual file
+                        manager._remove_shared_resource(resource)
+                        
+                        # Save changes
+                        manager._save_resources()
+                        
+                        st.success(f"Successfully removed: {filename}")
+                        st.session_state.refresh_counter += 1
+                        st.rerun()
                     except Exception as e:
                         st.error(f"Error removing resource: {str(e)}")
+            else:
+                # For resources shared with you, show status indicator
+                st.write("✓")
+    
     st.markdown("---")
 
     st.subheader("Add Resources to Share", divider=True)
