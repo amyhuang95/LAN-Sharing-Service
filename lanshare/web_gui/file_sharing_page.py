@@ -3,13 +3,16 @@ from lanshare.web_gui.service import LANSharingService
 from pathlib import Path
 from datetime import datetime
 import time
-import os
-import json  # Added this import
+import os 
 from streamlit_autorefresh import st_autorefresh
 
 # Initialize session state
 if 'selected_resource' not in st.session_state:
     st.session_state.selected_resource = None
+    
+# Add debug toggle to session state
+if 'show_debug' not in st.session_state:
+    st.session_state.show_debug = False
 
 @st.cache_resource
 def setup():
@@ -34,15 +37,54 @@ def main():
 
     with st.sidebar:
         st.markdown("Find a file or directory, share it with your friends!!!")
-        if st.button("🔄 Refresh Shared Files"):
+        if st.button("🔄 Sync Shared Files"):
             st.rerun()
+        
+        # Add a debug toggle to help troubleshoot
+        st.session_state.show_debug = st.checkbox("Show debug info", value=st.session_state.show_debug)
 
     manager = service.file_share_manager
+    discovery = service.discovery
 
     st.markdown("# 🔄 Shared Resources")
 
-    # Get both shared and received resources
-    shared_resources = manager.list_shared_resources(include_own=True)
+    # Get all resources: both shared and received
+    all_resources = []
+    
+    # Add resources you share with others
+    owned_resources = list(manager.shared_resources.values())
+    all_resources.extend(owned_resources)
+    
+    # Add resources others share with you
+    received_resources = list(manager.received_resources.values())
+    all_resources.extend(received_resources)
+    
+    # Sort by timestamp (newest first)
+    all_resources = sorted(all_resources, key=lambda r: r.timestamp, reverse=True)
+    
+    # Display debug info if enabled
+    if st.session_state.show_debug:
+        st.write("---")
+        st.subheader("Debug Information")
+        st.write(f"**Username:** {service.username}")
+        st.write(f"**Number of shared resources:** {len(owned_resources)}")
+        st.write(f"**Number of received resources:** {len(received_resources)}")
+        st.write(f"**Total resources:** {len(all_resources)}")
+        
+        # Show peers
+        peers = discovery.list_peers()
+        st.write(f"**Active peers:** {len(peers)}")
+        for username, peer in peers.items():
+            st.write(f"- {username} ({peer.address})")
+        
+        # Show received resources details
+        if received_resources:
+            st.write("**Received resources:**")
+            for r in received_resources:
+                st.write(f"- ID: {r.id[:8]}... | From: {r.owner} | Name: {Path(r.path).name}")
+        else:
+            st.write("**No received resources**")
+        st.write("---")
 
     # Display table with live data
     cols = st.columns([1, 2, 1, 1, 1, 1, 1])
@@ -50,7 +92,7 @@ def main():
     for col, header in zip(cols, headers):
         col.write(f"**{header}**")
 
-    for resource in shared_resources:
+    for resource in all_resources:
         cols = st.columns([1, 2, 1, 1, 1, 1, 1])
 
         try:
@@ -59,17 +101,28 @@ def main():
             filename = str(resource.path)
 
         access = "Everyone" if resource.shared_to_all else f"{len(resource.allowed_users)} users"
+        
+        # Highlight if resource is owned by you
+        is_own = resource.owner == service.username
+        name_style = "" if is_own else "color: blue;"
 
         with cols[0]: 
             st.write("📁" if resource.is_directory else "📄")
         with cols[1]:
             if st.button(filename, key=f"btn_{resource.id}"):
                 st.session_state.selected_resource = resource
-        with cols[2]: st.write(resource.owner)
+        with cols[2]: 
+            if is_own:
+                st.write("You")
+            else:
+                st.write(resource.owner)
         with cols[3]: st.write(access)
         with cols[4]: st.write(format_timestamp(resource.timestamp))
         with cols[5]: 
-            st.write(time.strftime("%Y-%m-%d %H:%M", time.localtime(resource.modified_time)))
+            try:
+                st.write(time.strftime("%Y-%m-%d %H:%M", time.localtime(resource.modified_time)))
+            except:
+                st.write("Unknown")
         with cols[6]:
             if resource.owner == service.username:
                 if st.button("❌", key=f"remove_{resource.id}"):
@@ -81,7 +134,7 @@ def main():
                                 manager.update_resource_access(resource.id, user, add=False)
                             
                             st.success(f"Access revoked for all users to {filename}")
-                            
+
                             del manager.shared_resources[resource.id]
                             manager._remove_shared_resource(resource)
                             st.rerun()
