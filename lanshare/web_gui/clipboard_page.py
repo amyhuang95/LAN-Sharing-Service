@@ -49,19 +49,21 @@ if "cb_receive_peers" not in st.session_state:
 if "toggler_status" not in st.session_state:
     st.session_state["toggler_status"] = clipboard.running # default to clipboard status
 
-def sync_state_with_service():
-    """Synchronize the session state with the clipboard service state"""
-    debug_log("Synchronizing session variables")
-    # Update service running status
-    # st.session_state.clipboard_status = clipboard.running
+def sync_clipboard_data():
+    """Synchronize the session state with the clipboard service's data"""
+    debug_log("Synchronizing session variables with clipboard service...")
     
     # Update clips
     st.session_state.clips = clipboard.get_clipboard_history().copy()
+    debug_log(f"session_state.clips: [{len(st.session_state.clips)}]")
     
     # Update peers
     st.session_state.cb_online_peers = set(clipboard.discovery.list_peers().keys())
+    debug_log(f"session_state.cb_online_peers: [{len(st.session_state.cb_online_peers)}]")
     st.session_state.cb_send_peers = clipboard.send_to_peers.copy()
+    debug_log(f"session_state.cb_send_peers: [{len(st.session_state.cb_send_peers)}]")
     st.session_state.cb_receive_peers = clipboard.receive_from_peers.copy()
+    debug_log(f"session_state.cb_receive_peers: [{len(st.session_state.cb_receive_peers)}]")
 
 def _toggle_clipboard():
     """Start the clipboard service if it's off, stop otherwise."""
@@ -69,17 +71,9 @@ def _toggle_clipboard():
     if not st.session_state.clipboard_status:
         clipboard.start()
         debug_log("Start clipboard service")
-        # st.session_state["clipboard_status"] = True
-        # debug_log(f"Update clipboard_status: {st.session_state.clipboard_status}")
     else:
         clipboard.stop()
         debug_log("Stop clipboard service")
-        # st.session_state["clipboard_status"] = False
-        # debug_log(f"Update clipboard_status: {st.session_state.clipboard_status}")
-    
-    # time.sleep(0.2) # wait for clipboard instance to change
-    # st.session_state.clipboard_status = clipboard.running
-    # sync_state_with_service()
 
 def _clear_history():
     """Clear clipboard history"""
@@ -90,7 +84,6 @@ def _clear_history():
         debug_log(f"Error clearing history: {str(e)}")
 
     time.sleep(0.2) # wait for clipboard instance to change
-    # sync_state_with_service()
 
 def display_clipboard_history(placeholder):
     """Shows list of clips"""
@@ -137,7 +130,7 @@ def display_send_peers(placeholder):
                     disabled=len(available_send_peers)==0)
         if option:
             clipboard.add_sending_peer(option)
-            sync_state_with_service()
+            sync_clipboard_data()()
             st.toast(f"{option} added to send list")
             debug_log(f"{option} added to send list")
         
@@ -161,7 +154,7 @@ def display_send_peers(placeholder):
                                   key="s_" + send_peer)
                         if click:
                             clipboard.remove_sending_peer(send_peer)
-                            sync_state_with_service()
+                            sync_clipboard_data()()
                             st.toast(f"{send_peer} removed from send list")
                             debug_log(f"{send_peer} removed from send list")
 
@@ -186,7 +179,7 @@ def display_receive_peers(placeholder):
                     disabled=len(available_receive_peers)==0)
         if option:
             clipboard.add_receiving_peer(option)
-            sync_state_with_service()
+            sync_clipboard_data()()
             st.toast(f"{option} added to receive list")
             debug_log(f"{option} added to receive list")
 
@@ -210,19 +203,20 @@ def display_receive_peers(placeholder):
                                   key="r_" + receive_peer)
                         if click:
                             clipboard.remove_receiving_peer(receive_peer)
-                            sync_state_with_service()
+                            sync_clipboard_data()()
                             st.toast(f"{receive_peer} removed from the receive list.")
                             debug_log(f"{receive_peer} removed from send list")
 
 def main():
     st.title("📋 Clipboard Sharing")
     debug_log(f"Entering main program...clipboard_status: {st.session_state.clipboard_status}")
-    # sync_state_with_service()
 
     # Side Bar
     with st.sidebar:
         st.markdown("Copy something on your device and automatically share with active peers you selected!")
         st.header("⚙️ Settings")
+
+        # Toggle service on/off
         toggle_label = "Status: "
         toggle_label += "On" if st.session_state.clipboard_status else "Off"
         status = st.toggle(toggle_label,
@@ -233,17 +227,19 @@ def main():
             st.session_state.clipboard_status = status
             st.rerun() # to update the toggle status text
         
+        # Clear clipboard history
         clear = st.button("Clear Clipboard History")
         if clear:
             _clear_history()
             st.toast("Clipboard history cleared!", icon="🧹")
     
-    # Check whether the feature is activated, don't render other component if service is not activated
+    # Don't render other component if service is not activated
     if not st.session_state.clipboard_status:
-        st.info("Clipboard sharing is not enabled. Toggled the setting in the sidebar to activate the feature.")
+        st.info("Clipboard sharing is not enabled. Toggle the setting in the sidebar to activate the feature.")
         return
     
-    sync_state_with_service()
+    # Refresh backend data
+    sync_clipboard_data()
 
     # Top Section - Clipboard History
     st.subheader("Clipboard History", divider=True, help="Recently copied contents by connected peers")
@@ -262,10 +258,9 @@ def main():
 
     # Refresh data in the main section
     if st.session_state.clipboard_status:
-        # Set up auto-refresh
-        st.empty()  # This is a placeholder that will trigger the refresh
-        time.sleep(1)  # Wait briefly
-        st.rerun()  # Rerun after updating data once
+        st.empty()  # placeholder to trigger the refresh
+        time.sleep(1)
+        st.rerun()
 
 if __name__ == "__main__":
     main()
