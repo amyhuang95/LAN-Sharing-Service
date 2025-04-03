@@ -265,7 +265,7 @@ def main():
     # Refresh data in the main section
     if st.session_state.clipboard_status:
         st.empty()  # placeholder to trigger the refresh
-        time.sleep(1)
+        time.sleep(0.5)
         st.rerun()
     
 if __name__ == "__main__":
