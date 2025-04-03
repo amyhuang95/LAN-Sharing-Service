@@ -5,7 +5,7 @@ from datetime import datetime
 import time
 import os
 from streamlit_autorefresh import st_autorefresh
-
+import _json
 # Initialize session state
 if 'selected_resource' not in st.session_state:
     st.session_state.selected_resource = None
@@ -22,20 +22,6 @@ def format_timestamp(timestamp):
         return timestamp.strftime("%Y-%m-%d %H:%M")
     return timestamp
 
-def sync_shared_directory(manager, user_share_dir):
-    """Ensure all files in shared directory are registered"""
-    shared_files = {Path(r.path).name for r in manager.shared_resources.values()}
-    for item in Path(user_share_dir).iterdir():
-        if item.name.startswith('.'):
-            continue  # Skip hidden/system files
-        if item.name not in shared_files:
-            try:
-                resource = manager.share_resource(str(item))
-                if resource:
-                    print(f"Synced: {item.name}")
-            except Exception as e:
-                print(f"Failed to sync {item}: {e}")
-
 def main():
     service = setup()
     if not service:
@@ -46,20 +32,15 @@ def main():
 
     with st.sidebar:
         st.markdown("Find a file or directory, share it with your friends!!!")
-        if st.button("🔄 Sync Shared Directory"):
-            sync_shared_directory(service.file_share_manager, service.file_share_manager.user_share_dir)
-            st.success("Shared directory synced!")
+        if st.button("🔄 Refresh Shared Files"):
             st.rerun()
 
     manager = service.file_share_manager
 
-    # Sync on start
-    sync_shared_directory(manager, manager.user_share_dir)
-
     st.markdown("# 🔄 Shared Resources")
 
-    # Get live data from FileShareManager
-    shared_resources = manager.list_shared_resources()
+    # Get both shared and received resources
+    shared_resources = manager.list_shared_resources(include_own=True)
 
     # Display table with live data
     cols = st.columns([1, 2, 1, 1, 1, 1, 1])
@@ -91,14 +72,24 @@ def main():
             if resource.owner == service.username:
                 if st.button("❌", key=f"remove_{resource.id}"):
                     try:
-                        if resource.is_directory:
-                            shared_path = Path(manager.user_share_dir) / filename
-                            if shared_path.exists():
-                                if os.path.isdir(shared_path):
-                                    os.rmdir(shared_path)
-                                else:
-                                    os.remove(shared_path)
+                        # Use manager's method to properly remove resource
                         del manager.shared_resources[resource.id]
+                        manager._remove_shared_resource(resource)
+                        
+                        # Also remove from peers by sending removal announcement
+                        removal_packet = {
+                            'type': 'file_share',
+                            'action': 'remove',
+                            'data': {
+                                'resource_id': resource.id,
+                                'owner': resource.owner
+                            }
+                        }
+                        service.discovery.udp_socket.sendto(
+                            _json.dumps(removal_packet).encode(),
+                            ('<broadcast>', service.config.port)
+                        )
+                        
                         if st.session_state.selected_resource and st.session_state.selected_resource.id == resource.id:
                             st.session_state.selected_resource = None
                         st.success(f"Removed {filename} from shared resources")
@@ -145,7 +136,9 @@ def main():
             st.error(f"Error sharing resource: {str(e)}")
 
     if (st.session_state.selected_resource and 
+        st.session_state.selected_resource.owner == service.username and
         st.session_state.selected_resource.id in manager.shared_resources):
+        
         resource = st.session_state.selected_resource
         st.markdown("---")
         st.subheader(f"Manage Access: {Path(resource.path).name}", divider=True)
@@ -162,7 +155,6 @@ def main():
         if new_global_access != resource.shared_to_all:
             if manager.set_share_to_all(resource.id, new_global_access):
                 st.success("Access updated successfully!")
-                resource.shared_to_all = new_global_access
                 st.rerun()
             else:
                 st.error("Failed to update access")
@@ -174,7 +166,6 @@ def main():
             if st.button("Grant Access") and new_user:
                 if manager.update_resource_access(resource.id, new_user, add=True):
                     st.success(f"Access granted to {new_user}")
-                    resource.add_user(new_user)
                     st.rerun()
                 else:
                     st.error("Failed to grant access")
@@ -187,7 +178,6 @@ def main():
                 if st.button("Revoke Access"):
                     if manager.update_resource_access(resource.id, user_to_remove, add=False):
                         st.success(f"Access revoked for {user_to_remove}")
-                        resource.remove_user(user_to_remove)
                         st.rerun()
                     else:
                         st.error("Failed to revoke access")
