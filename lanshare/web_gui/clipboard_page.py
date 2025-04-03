@@ -46,8 +46,6 @@ if "cb_send_peers" not in st.session_state:
 if "cb_receive_peers" not in st.session_state:
     st.session_state["cb_receive_peers"] = set()
     debug_log("Initialize session_state.cb.receive_peers")
-if "toggler_status" not in st.session_state:
-    st.session_state["toggler_status"] = clipboard.running # default to clipboard status
 
 def sync_clipboard_data():
     """Synchronize the session state with the clipboard service's data"""
@@ -113,25 +111,30 @@ def display_send_peers(placeholder):
     """Show the send to peers section"""
     with placeholder.container():
         st.subheader("Send To Peers", divider=True, help="Share clipboard with these peers.")
-        # check if any online peers
+        # don't render rest content if no active peers
         if not st.session_state.cb_online_peers:
             placeholder.info("No active peers found.")
             return
-        placeholder.empty()
+        
+        placeholder.empty() # clear the "No active peers found" info box
+
         # Select box to add new peers
         available_send_peers = st.session_state.cb_online_peers - st.session_state.cb_send_peers
         debug_log(f"available_send_peers=[{len(available_send_peers)}] online_peers=[{len(st.session_state.cb_online_peers)}] send_peers=[{len(st.session_state.cb_send_peers)}]")
+        
         placeholder_text = "Add a peer" if available_send_peers else "No available peers"
         option = st.selectbox(label="Add a peer to share clipboard",
                     label_visibility="collapsed",
-                    index=None,
+                    index=None, # default don't select anything
                     options=available_send_peers,
                     placeholder=placeholder_text,
-                    disabled=len(available_send_peers)==0)
+                    disabled=len(available_send_peers) == 0 # disable selecting if no available options
+                    )
+        # manual check on select
         if option:
             clipboard.add_sending_peer(option)
-            sync_clipboard_data()()
-            st.toast(f"{option} added to send list")
+            sync_clipboard_data()
+            st.toast(f"{option} added to send list", icon="👤")
             debug_log(f"{option} added to send list")
         
         # List all added peers
@@ -140,47 +143,50 @@ def display_send_peers(placeholder):
             send_peers_container.info("No peer added in the sending list yet!")
             return
         
-        send_peers_container.empty()
+        send_peers_container.empty() # clear the info box
         with send_peers_container.container():
             # Each peer holds a container with a remove btn
             for send_peer in st.session_state.cb_send_peers:
                 with st.container(border=False):
-                    peer_left_col, peer_right_col = st.columns(2)
-                    peer_left_col.write(send_peer)
-                    with peer_right_col:
+                    send_peer_name_col, send_remove_col = st.columns((9,1))
+                    send_peer_name_col.write(send_peer)
+                    with send_remove_col:
                         click = st.button(label="", 
                                   icon="❌", 
                                   type="tertiary",
                                   key="s_" + send_peer)
                         if click:
                             clipboard.remove_sending_peer(send_peer)
-                            sync_clipboard_data()()
-                            st.toast(f"{send_peer} removed from send list")
+                            sync_clipboard_data()
+                            st.toast(f"{send_peer} removed from send list", icon="🗑️")
                             debug_log(f"{send_peer} removed from send list")
 
 def display_receive_peers(placeholder):
     """Show the receive from peers section"""
     with placeholder.container():
         st.subheader("Receive From Peers", divider=True, help="Receive clips shared by these peers.")
-        # check if any online peers
+        # don't render rest content if no active peers
         if not st.session_state.cb_online_peers:
             placeholder.info("No active peers found.")
             return
-        placeholder.empty()
+        
+        placeholder.empty() # clear info box
+
         # Select box to add new peers
         available_receive_peers = st.session_state.cb_online_peers - st.session_state.cb_receive_peers
         debug_log(f"available_receive_peers=[{len(available_receive_peers)}] online_peers=[{len(st.session_state.cb_online_peers)}] receive_peers=[{len(st.session_state.cb_receive_peers)}]")
         placeholder_text = "Add a peer" if available_receive_peers else "No available peers"
         option = st.selectbox(label="Add a peer to receive clipboard",
-                     label_visibility="collapsed",
-                     index=None,
+                    label_visibility="collapsed",
+                    index=None, # default not select anything
                     options=available_receive_peers,
                     placeholder=placeholder_text,
-                    disabled=len(available_receive_peers)==0)
+                    disabled=len(available_receive_peers) == 0 # disable select if no active peers
+                    )
         if option:
             clipboard.add_receiving_peer(option)
-            sync_clipboard_data()()
-            st.toast(f"{option} added to receive list")
+            sync_clipboard_data()
+            st.toast(f"{option} added to receive list", icon="👤")
             debug_log(f"{option} added to receive list")
 
         # List all added peers
@@ -194,17 +200,17 @@ def display_receive_peers(placeholder):
             # Each peer holds a container with a remove btn
             for receive_peer in st.session_state.cb_receive_peers:
                 with st.container(border=False):
-                    rec_left_col, rec_right_col = st.columns(2)
-                    rec_left_col.write(receive_peer)
-                    with rec_right_col:
+                    rec_peer_name_col, rec_remove_col = st.columns((9,1))
+                    rec_peer_name_col.write(receive_peer)
+                    with rec_remove_col:
                         click = st.button(label="", 
                                   icon="❌", 
                                   type="tertiary",
                                   key="r_" + receive_peer)
                         if click:
                             clipboard.remove_receiving_peer(receive_peer)
-                            sync_clipboard_data()()
-                            st.toast(f"{receive_peer} removed from the receive list.")
+                            sync_clipboard_data()
+                            st.toast(f"{receive_peer} removed from the receive list", icon="🗑️")
                             debug_log(f"{receive_peer} removed from send list")
 
 def main():
@@ -261,6 +267,6 @@ def main():
         st.empty()  # placeholder to trigger the refresh
         time.sleep(1)
         st.rerun()
-
+    
 if __name__ == "__main__":
     main()
