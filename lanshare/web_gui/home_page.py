@@ -10,6 +10,14 @@ def setup():
 def main():
     service = setup()
 
+    with st.sidebar:
+        address = st.text_input(
+        "Enter some text 👇",
+    )
+        if address:
+            service.discovery.register_with_server(address)
+
+
     st.markdown(f"### Welcome to LAN Share, `{service.username}`!")
     st.write(
     "You can interact with others in the local network easily for the following tasks:\n\n"
