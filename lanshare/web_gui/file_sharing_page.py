@@ -4,8 +4,9 @@ from pathlib import Path
 from datetime import datetime
 import time
 import os
+import json  # Added this import
 from streamlit_autorefresh import st_autorefresh
-import _json
+
 # Initialize session state
 if 'selected_resource' not in st.session_state:
     st.session_state.selected_resource = None
@@ -13,6 +14,7 @@ if 'selected_resource' not in st.session_state:
 @st.cache_resource
 def setup():
     return LANSharingService.get_instance(st.session_state.username)
+
 
 def format_timestamp(timestamp):
     """Format timestamp for display"""
@@ -72,31 +74,22 @@ def main():
             if resource.owner == service.username:
                 if st.button("❌", key=f"remove_{resource.id}"):
                     try:
-                        # Use manager's method to properly remove resource
-                        del manager.shared_resources[resource.id]
-                        manager._remove_shared_resource(resource)
-                        
-                        # Also remove from peers by sending removal announcement
-                        removal_packet = {
-                            'type': 'file_share',
-                            'action': 'remove',
-                            'data': {
-                                'resource_id': resource.id,
-                                'owner': resource.owner
-                            }
-                        }
-                        service.discovery.udp_socket.sendto(
-                            _json.dumps(removal_packet).encode(),
-                            ('<broadcast>', service.config.port)
-                        )
-                        
-                        if st.session_state.selected_resource and st.session_state.selected_resource.id == resource.id:
-                            st.session_state.selected_resource = None
-                        st.success(f"Removed {filename} from shared resources")
-                        st.rerun()
+                        # Instead of deleting, just disable share_to_all
+                        if manager.set_share_to_all(resource.id, False):
+                            # Also remove all individual access
+                            for user in list(resource.allowed_users):
+                                manager.update_resource_access(resource.id, user, add=False)
+                            
+                            st.success(f"Access revoked for all users to {filename}")
+                            
+                            del manager.shared_resources[resource.id]
+                            manager._remove_shared_resource(resource)
+                            st.rerun()
+                        else:
+                            st.error("Failed to revoke access")
+                            
                     except Exception as e:
                         st.error(f"Error removing resource: {str(e)}")
-
     st.markdown("---")
 
     st.subheader("Add Resources to Share", divider=True)
