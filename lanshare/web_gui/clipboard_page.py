@@ -243,18 +243,18 @@ def main():
 
     # Top Section - Clipboard History
     st.subheader("Clipboard History", divider=True, help="Recently copied contents by connected peers")
-    cb_history_container = st.empty()
+    history_container = st.empty()
 
     with st.container(height=100, border=False):
         if not st.session_state.clips:
-            cb_history_container.info("No clips yet...try to copy something!")
+            history_container.info("No clips yet...try to copy something!")
         else:
-            display_clipboard_history(cb_history_container)
+            display_clipboard_history(history_container)
 
     # Bottom Section - Authorized peers list
-    bottom_left, bottom_right = st.columns(2)
-    display_send_peers(bottom_left)
-    display_receive_peers(bottom_right)
+    send_list_container, receive_list_container = st.columns(2)
+    display_send_peers(send_list_container)
+    display_receive_peers(receive_list_container)
 
     # Refresh data in the main section
     if st.session_state.clipboard_status:
