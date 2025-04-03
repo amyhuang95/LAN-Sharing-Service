@@ -69,10 +69,10 @@ def main():
         st.stop()
 
     # Shorter refresh interval for more responsiveness
-    st_autorefresh(interval=3000, key=f"file_sharing_refresh_{st.session_state.refresh_counter}")
+    st_autorefresh(interval=5000, key=f"file_sharing_refresh_{st.session_state.refresh_counter}")
 
     with st.sidebar:
-        st.markdown("Find a file or directory, share it with your friends!!!")
+        st.markdown("Find a file or directory and share it with your friends!!!")
         
         col1, col2 = st.columns(2)
         with col1:
@@ -111,7 +111,7 @@ def main():
                 st.rerun()
         
         # Add a debug toggle to help troubleshoot
-        st.session_state.show_debug = st.checkbox("Show debug info", value=st.session_state.show_debug)
+        st.session_state.show_debug = st.toggle("Show debug info", value=st.session_state.show_debug)
 
     manager = service.file_share_manager
     discovery = service.discovery
@@ -264,7 +264,7 @@ def main():
     
     st.markdown("---")
 
-    st.subheader("Add Resources to Share", divider=True)
+    st.subheader("Add Resources to Share 🤝🤝🤝", divider=True)
     uploaded_file = st.file_uploader("Select a file to share:", type=["txt", "pdf", "png", "jpg", "docx"])
     folder_path = st.text_input("Or enter folder path to share:", placeholder="e.g., /Documents/Project")
 
