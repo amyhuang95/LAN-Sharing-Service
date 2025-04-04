@@ -44,6 +44,7 @@ def main():
                     st.toast("Successfully registered with a registry server!", icon="🎉")
                 else:
                     st.toast("Error connecting to the registry server. Please re-check the provided address.", icon="⚠️")
+                st.rerun() # refresh to update status text
         else:
             placeholder = st.empty()
             with placeholder.container():
@@ -54,8 +55,7 @@ def main():
                         st.toast("Successfully unregistered from registry server!", icon="🎉")
                     else:
                         st.toast("Error unregistering from the registry server.", icon="⚠️")
-
-
+                    st.rerun() # refresh to update status text
 
     # Main content
     st.markdown(f"### Welcome to LAN Share, `{service.username}`!")
@@ -69,29 +69,26 @@ def main():
 
     st.markdown("---")
     st.subheader("Online Users")
-
     active_peers_container = st.empty()
-    sync_online_peers()
-    peers = st.session_state.online_peers
 
-    with st.container():
-        if not peers:
-            active_peers_container.info("No active peers found.")
-        else:
-            data = []
-            for username, peer in peers.items():
-                data.append({
-                    "Username": username,
-                    "IP Address": peer.address,
-                    "Port": str(peer.port),
-                    "Last Seen": peer.last_seen
-                })
-            active_peers_container.dataframe(data)
+    # Refresh active peers list
+    while True:
+        peers = service.discovery.list_peers()
+        with st.container():
+            if not peers:
+                active_peers_container.info("No active peers found.")
+            else:
+                data = []
+                for username, peer in peers.items():
+                    data.append({
+                        "Username": username,
+                        "IP Address": peer.address,
+                        "Port": str(peer.port),
+                        "Last Seen": peer.last_seen
+                    })
+                active_peers_container.dataframe(data)
 
-    
-    st.empty()
-    time.sleep(1) # refresh every 1 second
-    st.rerun()
+        time.sleep(1) # refresh every 1 second
 
 
 if __name__ == "__main__":
