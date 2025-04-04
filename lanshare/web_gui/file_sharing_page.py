@@ -18,6 +18,15 @@ if 'show_debug' not in st.session_state:
 # Add force refresh counter to trigger full refreshes
 if 'refresh_counter' not in st.session_state:
     st.session_state.refresh_counter = 0
+    
+# Add folder path input value storage
+if 'folder_path' not in st.session_state:
+    st.session_state.folder_path = ""
+
+# This will be used to force a new file uploader
+if 'upload_key' not in st.session_state:
+    st.session_state.upload_key = 0
+
 
 @st.cache_resource
 def setup():
@@ -61,6 +70,36 @@ def verify_received_files(manager):
     
     return 0
 
+
+def share_path(manager, path):
+    """Share a file or directory.
+    
+    Args:
+        manager: The file share manager instance
+        path: Path to the file or directory.
+    Returns:
+        bool: True if shared successfully, False otherwise
+    """
+    try:
+        # Expand user paths like ~ and ~user
+        path = os.path.expanduser(path)
+        
+        if not os.path.exists(path):
+            st.error(f"Path not found: {path}")
+            return False
+
+        resource = manager.share_resource(str(path))
+        
+        if resource:
+            resource_type = "folder" if os.path.isdir(path) else "file"
+            st.success(f"Successfully shared {resource_type}: {path}")
+            return True
+        else:
+            st.error(f"Failed to share path: {path}")
+            return False
+    except Exception as e:
+        st.error(f"Error sharing path: {str(e)}")
+        return False
 
 def main():
     service = setup()
@@ -265,10 +304,20 @@ def main():
     st.markdown("---")
 
     st.subheader("Add Resources to Share 🤝🤝🤝", divider=True)
-    uploaded_file = st.file_uploader("Select a file to share:", type=["txt", "pdf", "png", "jpg", "docx"])
-    folder_path = st.text_input("Or enter folder path to share:", placeholder="e.g., /Documents/Project")
+    # Dynamic key to force file uploader to reset
+    uploader_key = f"file_uploader_{st.session_state.upload_key}"
+    text_input_key = f"text_input_{st.session_state.upload_key}"
+    uploaded_file = st.file_uploader("Select a file to share:", 
+                                type=["txt", "pdf", "png", "jpg", "docx"],
+                                key=uploader_key)
+    folder_path = st.text_input(
+        "Or enter folder path to share:", 
+        value=st.session_state.folder_path,
+        placeholder="e.g., /Documents/Project", key=text_input_key)
 
     if st.button("Share Resource"):
+        shared_successfully = False
+        
         try:
             if uploaded_file:
                 temp_dir = Path("temp_uploads")
@@ -280,23 +329,25 @@ def main():
                 if resource:
                     st.success(f"Successfully shared: {uploaded_file.name}")
                     os.remove(temp_path)
-                    st.rerun()
+                    shared_successfully = True
+                    
                 else:
                     st.error("Failed to share file")
 
             elif folder_path:
-                folder_path = Path(folder_path)
-                if not folder_path.exists():
-                    st.error("Folder path does not exist")
-                else:
-                    resource = manager.share_resource(str(folder_path), is_directory=True)
-                    if resource:
-                        st.success(f"Successfully shared folder: {folder_path}")
-                        st.rerun()
-                    else:
-                        st.error("Failed to share folder")
+                if share_path(manager, folder_path):
+                    shared_successfully = True
             else:
                 st.warning("Please select a file or enter a folder path")
+                
+            # Clear inputs if sharing was successful
+            if shared_successfully:
+                # Clear the folder path input
+                st.session_state.folder_path = ""
+                # Force a refresh to clear the file uploader
+                st.session_state.upload_key += 1
+                st.rerun()
+                
         except Exception as e:
             st.error(f"Error sharing resource: {str(e)}")
 
