@@ -65,6 +65,7 @@ class Clipboard:
         self.running = False
         self.send_to_peers.clear()
         self.receive_from_peers.clear()
+        self.clip_list.clear()
         self.udp_socket.close()
     
     def _start_threads(self) -> None:

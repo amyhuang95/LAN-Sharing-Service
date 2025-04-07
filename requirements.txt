@@ -5,3 +5,5 @@ pyperclip # For clipboard management (Windows/MacOS/Linux)
 rich>=10.0.0 # For enhanced terminal UI
 flask>=2.0.0 # For registry server
 requests>=2.25.0 # For registry client communication
+streamlit>=1.44.0 # For web UI
+streamlit-autorefresh
