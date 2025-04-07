@@ -34,9 +34,9 @@ pip install -r requirements.txt
 **Notes: Make sure all the device are in the same LAN to discover your peers.**
 
 ## Start
-Create a user with `username = evan-dayy`. Add `--share_clipboard` or `-sc` flag to activate clipboard sharing feature.
+Create a user with `username = evan-dayy`.
 ```sh
-python create.py create --username <USERNAME> --port <OPTIONL>
+python create.py create --username <USERNAME> --port <OPTIONL> --gui <terminal/streamlit>
 ```
 Type `help` to see the LAN Terminal command;
 ```
@@ -184,7 +184,7 @@ evan-dayy#208b@LAN(192.168.4.141)#
 
 ## Registry Server Mode
 
-Background: In enterprise-grade internet (eduroam), broadcasting message is highly restricted from one peer to another peer. In addition to the previous introduction of Laptop Hotpot (the one we discussed in the classroom), registry server is a much easier alternative to resolve the issue.
+Background: In enterprise-grade internet (eduroam), broadcasting message is highly restricted from one peer to another peer. In addition to the previous introduction of Laptop Hotspot (the one we discussed in the classroom), registry server is a much easier alternative to resolve the issue.
 
 What is it? A centralized server that record registered users' private IP and port numbers;
 ### Start the Registry Server
